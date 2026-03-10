@@ -1,0 +1,19 @@
+# Ignore virtual environment
+mbti_env/
+
+# Ignore caches
+__pycache__/
+.cache/
+
+# Ignore large datasets and model files
+data/
+models/
+
+# Ignore downloaded audio and ffmpeg binaries
+ffmpeg-master-latest-win64-gpl/
+*.mp3
+*.m4a
+*.part
+
+# Ignore secret environment variables
+.env
