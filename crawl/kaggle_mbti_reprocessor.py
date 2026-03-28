@@ -5,6 +5,7 @@ import pandas as pd
 import numpy as np
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
+from spotipy.exceptions import SpotifyException
 import yt_dlp
 import librosa
 import warnings
@@ -40,113 +41,209 @@ emotion_pipeline = pipeline("text-classification", model="SamLowe/roberta-base-g
 # ==========================================
 # 1. BỘ TỪ KHÓA THỂ LOẠI (GENRE) CHUẨN TỪ MODEL MBTI CỦA BẠN
 # ==========================================
-e_genres = ['pop', 'dance', 'edm', 'hip hop', 'rap', 'house', 'latin', 'trap', 'club', 'party', 'k-pop', 'reggaeton']
-i_genres = ['lofi', 'indie', 'acoustic', 'jazz', 'classical', 'ambient', 'chill', 'folk', 'sleep', 'bedroom pop']
-s_genres = ['v-pop', 'country', 'r&b', 'mainstream', 'adult standards', 'schlager', 'bolero']
-n_genres = ['experimental', 'psychedelic', 'synthwave', 'shoegaze', 'avant-garde', 'cyberpunk', 'post-rock']
-f_genres = ['soul', 'blues', 'emo', 'ballad', 'romantic', 'vocal', 'gospel', 'singer-songwriter']
-t_genres = ['metal', 'techno', 'math rock', 'idm', 'dubstep', 'trance', 'instrumental', 'hardstyle']
+# Extended with aliases for better matching
+e_genres = ['pop', 'dance', 'edm', 'electronic', 'hip hop', 'hiphop', 'rap', 'house', 'deep house', 
+            'future bass', 'latin', 'trap', 'club', 'party', 'k-pop', 'kpop', 'reggaeton', 'upbeat', 
+            'exercize', 'workout', 'disco', 'funky', 'funk']
+i_genres = ['lofi', 'lo-fi', 'lo fi', 'indie', 'indie pop', 'indie rock', 'acoustic', 'jazz', 'classical', 
+            'ambient', 'chill', 'chillhop', 'chillwave', 'folk', 'folkish', 'sleep', 'bedroom pop', 
+            'rnb', 'alternative r&b', 'quiet', 'slow', 'meditative', 'peaceful']
+s_genres = ['v-pop', 'vpop', 'country', 'r&b', 'rnb', 'mainstream', 'pop rock', 'adult standards', 
+            'schlager', 'bolero', 'easy listening', 'standard', 'singer-songwriter']
+n_genres = ['experimental', 'psychedelic', 'synthwave', 'synthpop', 'shoegaze', 'avant-garde', 
+            'cyberpunk', 'post-rock', 'progressive', 'prog', 'electronic experimental', 'glitch',
+            'vaporwave', 'future funk', 'art rock', 'complex']
+f_genres = ['soul', 'blues', 'emo', 'emotional', 'ballad', 'romantic', 'vocal', 'acapella',
+            'gospel', 'singer-songwriter', 'love songs', 'sad', 'sad songs', 'heartbreak']
+t_genres = ['metal', 'metalcore', 'deathcore', 'hardcore', 'techno', 'tech house', 'math rock', 
+            'idm', 'intelligent dance', 'dubstep', 'bass', 'trance', 'instrumental', 'hardstyle',
+            'drum and bass', 'dnb', 'breakcore']
 
 ALL_TRAINED_GENRES = e_genres + i_genres + s_genres + n_genres + f_genres + t_genres
 
-def calculate_genre_mbti_scores(found_genres):
-    ei_score = 0.0
-    sn_score = 0.0
-    tf_score = 0.0
-    
-    high_weight_genres = ['experimental', 'shoegaze', 'synthwave', 'metal', 'lofi', 'math rock', 'indie', 'jazz', 'classical', 'singer-songwriter', 'emo']
-    
-    for genre in found_genres:
-        weight = 2.0 if genre in high_weight_genres else 1.0
-        
-        if genre in e_genres: ei_score += weight
-        if genre in i_genres: ei_score -= weight
-        if genre in s_genres: sn_score += weight
-        if genre in n_genres: sn_score -= weight
-        if genre in t_genres: tf_score += weight
-        if genre in f_genres: tf_score -= weight
-            
-    num_genres = len(found_genres) if len(found_genres) > 0 else 1
-    
-    return {
-        'genre_ei': round(ei_score / num_genres, 4),
-        'genre_sn': round(sn_score / num_genres, 4),
-        'genre_tf': round(tf_score / num_genres, 4)
+def normalize_genre(g):
+    """Normalize genre string for better matching"""
+    g = g.lower().strip()
+    # Replace common variations
+    replacements = {
+        'alternative': 'indie',
+        'electronic dance': 'edm',
+        'indie pop': 'indie',
+        'indie rock': 'indie',
+        'r&b': 'rnb',
+        'rhythm and blues': 'rnb',
+        'hip-hop': 'hip hop',
+        'hip hop/rap': 'hip hop',
+        'singer/songwriter': 'singer-songwriter',
+        'k-pop': 'kpop',
+        'k pop': 'kpop',
+        'lo-fi': 'lofi',
+        'chill hop': 'chillhop'
     }
+    for key, val in replacements.items():
+        if key in g:
+            g = g.replace(key, val)
+    return g
+
+def calculate_genre_mbti_scores(found_genres):
+    """
+    Calculate MBTI-style genre preferences.
+    Key insight: Genres alone can't capture mixed preferences - that's why we also use
+    audio features (energy, tempo, danceability) to disambiguate.
+    
+    Example:
+    - indie-pop song: genres say balanced E/I
+    - BUT: if energy is VERY HIGH + danceability HIGH → lean towards E
+    - if energy is LOW + tempo SLOW → lean towards I
+    """
+    counts = {'e': 0, 'i': 0, 's': 0, 'n': 0, 't': 0, 'f': 0}
+    high_weight_genres = ['experimental', 'shoegaze', 'synthwave', 'metal', 'metalcore', 'lofi', 'math rock', 'progressive']
+    
+    if not found_genres:
+        return {
+            'genre_ei': 0.5,
+            'genre_sn': 0.5,
+            'genre_tf': 0.5,
+            'genre_diversity': 0.0
+        }
+
+    for genre in found_genres:
+        w = 2.0 if genre in high_weight_genres else 1.0
+        if genre in e_genres: counts['e'] += w
+        if genre in i_genres: counts['i'] += w
+        if genre in s_genres: counts['s'] += w
+        if genre in n_genres: counts['n'] += w
+        if genre in f_genres: counts['f'] += w
+        if genre in t_genres: counts['t'] += w
+    
+    # Use simple ratio - but understand it's just genre bias
+    # Audio features in train_bot.ipynb will provide the real disambiguation
+    total = len(found_genres)
+    return {
+        'genre_ei': counts['e'] / (counts['e'] + counts['i'] + 1e-6),
+        'genre_sn': counts['n'] / (counts['s'] + counts['n'] + 1e-6),
+        'genre_tf': counts['t'] / (counts['t'] + counts['f'] + 1e-6),
+        'genre_diversity': len(set(found_genres)) / total 
+    }
+def match_genre_to_mbti(genre_str):
+    """Match a genre string to MBTI training genres with smart matching"""
+    if not genre_str:
+        return None
+    
+    genre_str = normalize_genre(genre_str)
+    
+    # Exact match first
+    if genre_str in ALL_TRAINED_GENRES:
+        return genre_str
+    
+    # Substring match (best partial match)
+    best_match = None
+    best_score = 0
+    for trained_genre in ALL_TRAINED_GENRES:
+        if genre_str in trained_genre or trained_genre in genre_str:
+            score = len(trained_genre)  # Prefer longer matches
+            if score > best_score:
+                best_score = score
+                best_match = trained_genre
+    
+    return best_match
 
 def get_accurate_multi_genre(clean_title, clean_artist, track_obj=None, sp=None):
     found_genres = []
     release_year = 2020
     popularity = 50
+    spotify_found = False
     
-    # --- BƯỚC 1: HỎI SPOTIFY ---
+    # --- BƯỚC 1: HỎI SPOTIFY (TRACK SEARCH + POPULARITY) ---
     try:
-        if track_obj and sp and len(track_obj.get('artists', [])) > 0 and track_obj['artists'][0].get('id'):
-            artist_id = track_obj['artists'][0]['id']
-            artist_info = sp.artist(artist_id)
-            spotify_genres = artist_info.get('genres', [])
+        if sp:
+            search_query = f"{clean_title} {clean_artist}"
+            max_retries = 3
+            retry_count = 0
             
-            for g in spotify_genres:
-                if 'alternative' in g: g = 'indie'
-                if 'vietnamese' in g: g = 'v-pop'
-                if 'singer-songwriter' in g or 'songwriter' in g: g = 'singer-songwriter'
-                
-                for trained_genre in ALL_TRAINED_GENRES:
-                    if (trained_genre == g or trained_genre in g) and trained_genre not in found_genres:
-                        found_genres.append(trained_genre)
-    except Exception: pass
-
-    # --- BƯỚC 2: HỎI APPLE MUSIC ---
-    try:
-        search_query = urllib.parse.quote(f"{clean_title} {clean_artist}")
-        url = f"https://itunes.apple.com/search?term={search_query}&entity=song&limit=1"
-        response = requests.get(url, timeout=5)
-        if response.status_code == 200:
-            data = response.json()
-            if data['resultCount'] > 0:
-                result = data['results'][0]
-                
-                # Lấy năm phát hành (Cắt 4 số đầu VD: "2015-10-23" -> "2015")
-                release_date = result.get('releaseDate', '')
-                if len(release_date) >= 4:
-                    try:
-                        release_year = int(release_date[:4])
-                    except ValueError:
-                        release_year = 2020
-                    
-                apple_genres = result.get('genres', [])
-                primary = result.get('primaryGenreName')
-                if primary and primary not in apple_genres: apple_genres.append(primary)
-                
-                apple_genres_strs = []
-                for g in apple_genres:
-                    if isinstance(g, dict) and 'name' in g:
-                        apple_genres_strs.append(g['name'].lower())
-                    elif isinstance(g, str):
-                        apple_genres_strs.append(g.lower())
+            while retry_count < max_retries:
+                try:
+                    results = sp.search(q=search_query, type='track', limit=1)
+                    if results['tracks']['items']:
+                        track = results['tracks']['items'][0]
+                        popularity = track.get('popularity', 50)  # Spotify popularity (0-100)
+                        spotify_found = True
                         
-                apple_genres_strs = [g for g in apple_genres_strs if g != 'music']
-                for g in apple_genres_strs:
-                    if 'alternative' in g: g = 'indie'
-                    if 'vietnamese' in g: g = 'v-pop'
-                    if 'singer/songwriter' in g: g = 'singer-songwriter'
-                    if 'hard rock' in g: g = 'metal'
+                        # Lấy release_date từ album
+                        if 'album' in track and 'release_date' in track['album']:
+                            release_date = track['album']['release_date']
+                            try:
+                                release_year = int(release_date[:4])
+                            except ValueError:
+                                release_year = 2020
+                        
+                        # Lấy genres từ artists
+                        for artist in track.get('artists', []):
+                            try:
+                                artist_info = sp.artist(artist['id'])
+                                spotify_genres = artist_info.get('genres', [])
+                                for g in spotify_genres:
+                                    matched = match_genre_to_mbti(g)
+                                    if matched and matched not in found_genres:
+                                        found_genres.append(matched)
+                            except Exception:
+                                pass
+                    break  # Success, exit retry loop
                     
-                    for trained_genre in ALL_TRAINED_GENRES:
-                        if (trained_genre == g or trained_genre in g) and trained_genre not in found_genres:
-                            found_genres.append(trained_genre)
-    except Exception: pass
+                except SpotifyException as e:
+                    if e.http_status == 429:  # Rate Limited
+                        retry_count += 1
+                        wait_time = 2 ** retry_count  # Exponential backoff: 2s, 4s, 8s
+                        print(f"       [!] Rate limit (429). Waiting {wait_time}s before retry...")
+                        time.sleep(wait_time)
+                    else:
+                        break  # Other Spotify error, give up
+    except Exception as e:
+        pass
 
-    if not found_genres: found_genres = ["pop"]
-    
-    # Heuristic Popularity (Giả lập ngẫu nhiên dựa trên Thể loại nhạc & Năm sinh - Vd: Nhạc Pop mới thì dễ xu hướng hơn)
-    base_pop = random.randint(30, 60)
-    if 'pop' in found_genres or 'dance' in found_genres: base_pop += random.randint(10, 30)
-    if 'indie' in found_genres or 'lofi' in found_genres: base_pop -= random.randint(5, 15)
-    if release_year >= 2022: base_pop += random.randint(5, 20)
-    
-    # Cap popularity in [0, 100]
-    popularity = max(0, min(100, base_pop))
+    # --- BƯỚC 2: HỎI APPLE MUSIC (NẾU SPOTIFY KHÔNG TÌM ĐƯỢC) ---
+    if not found_genres:
+        try:
+            search_query = urllib.parse.quote(f"{clean_title} {clean_artist}")
+            url = f"https://itunes.apple.com/search?term={search_query}&entity=song&limit=1"
+            response = requests.get(url, timeout=5)
+            if response.status_code == 200:
+                data = response.json()
+                if data['resultCount'] > 0:
+                    result = data['results'][0]
+                    
+                    # Lấy năm phát hành
+                    release_date = result.get('releaseDate', '')
+                    if len(release_date) >= 4:
+                        try:
+                            release_year = int(release_date[:4])
+                        except ValueError:
+                            release_year = 2020
+                        
+                    apple_genres = result.get('genres', [])
+                    primary = result.get('primaryGenreName')
+                    if primary and primary not in apple_genres: apple_genres.append(primary)
+                    
+                    apple_genres_strs = []
+                    for g in apple_genres:
+                        if isinstance(g, dict) and 'name' in g:
+                            apple_genres_strs.append(g['name'].lower())
+                        elif isinstance(g, str):
+                            apple_genres_strs.append(g.lower())
+                            
+                    apple_genres_strs = [g for g in apple_genres_strs if g != 'music']
+                    for g in apple_genres_strs:
+                        matched = match_genre_to_mbti(g)
+                        if matched and matched not in found_genres:
+                            found_genres.append(matched)
+        except Exception:
+            pass
+
+    # Fallback: use category-based default if still empty
+    if not found_genres: 
+        # Log warning for debugging
+        print(f"       [!] WARNING: No genres found for '{clean_title}' - using fallback 'pop'")
+        found_genres = ["pop"]
     
     return {
         'genres': found_genres[:3],
@@ -396,14 +493,21 @@ def mass_reprocess_kaggle():
     random.shuffle(playlist_ids) # Xử lý ngẫu nhiên để trộn data
     
     processed_songs = set()
-    if os.path.exists(output_csv):
-        df_out = pd.read_csv(output_csv)
-        # Bỏ đi những dòng bị rác/trống
-        df_out = df_out.dropna(subset=['title', 'artists'])
-        for _, row in df_out.iterrows():
-            song_key = f"{str(row['title']).strip().lower()} - {str(row['artists']).strip().lower()}"
-            processed_songs.add(song_key)
-        print(f" Tìm thấy {output_csv}, đã tải {len(processed_songs)} bài hát đã xử lý.")
+    processed_songs = set()
+    if os.path.exists(output_csv) and os.path.getsize(output_csv) > 20: 
+        try:
+            df_out = pd.read_csv(output_csv)
+            if 'title' in df_out.columns and 'artists' in df_out.columns:
+                # Bỏ đi những dòng bị rác/trống
+                df_out = df_out.dropna(subset=['title', 'artists'])
+                for _, row in df_out.iterrows():
+                    song_key = f"{str(row['title']).strip().lower()} - {str(row['artists']).strip().lower()}"
+                    processed_songs.add(song_key)
+                print(f" Tìm thấy {output_csv}, đã tải {len(processed_songs)} bài hát đã xử lý.")
+            else:
+                print(f" File {output_csv} bị lỗi tiêu đề cột, sẽ khởi tạo lại.")
+        except pd.errors.EmptyDataError:
+            print(f" File {output_csv} bị trống, sẽ khởi tạo lại.")
     else:
         df_empty = pd.DataFrame(columns=[
             'title', 'artists', 'spotify_popularity', 'release_year', 'artist_genres',
@@ -536,9 +640,10 @@ def mass_reprocess_kaggle():
                     'mbti_label': mbti_label
                 }
                 
-                # Append to CSV - only write header if file doesn't exist yet
+                # Append to CSV - write header only if file is actually empty or missing
                 file_exists = os.path.exists(output_csv)
-                pd.DataFrame([new_row]).to_csv(output_csv, mode='a', header=not file_exists, index=False, encoding='utf-8-sig')
+                write_header = not file_exists or os.path.getsize(output_csv) < 10
+                pd.DataFrame([new_row]).to_csv(output_csv, mode='a', header=write_header, index=False, encoding='utf-8-sig')
                 processed_songs.add(song_key)
                 print(f"     DONE. Đã thêm Data vào {output_csv}.")
                 gc.collect()  # Giải phóng RAM sau mỗi bài
