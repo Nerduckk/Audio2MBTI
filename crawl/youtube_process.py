@@ -270,7 +270,10 @@ if not os.path.isfile(csv_filename):
         'title', 'url', 'spotify_popularity', 'release_year', 'artist_genres',
         'genre_ei_score', 'genre_sn_score', 'genre_tf_score', 
         'tempo_bpm', 'energy', 'danceability', 'spectral_centroid', 
-        'spectral_flatness', 'lyrics_polarity'
+        'spectral_flatness', 'zero_crossing_rate', 'spectral_bandwidth',
+        'spectral_rolloff', 'mfcc_mean', 'chroma_mean', 'tempo_strength',
+        'lyrics_polarity', 'lyrics_joy', 'lyrics_sadness',
+        'lyrics_anger', 'lyrics_love', 'lyrics_fear'
     ])
     df_empty.to_csv(csv_filename, index=False, encoding='utf-8-sig')
 
@@ -317,6 +320,7 @@ for video in videos:
     # 4.2 Phân tích Lời bài hát & NLP
     print(f"  [+] Lời nhạc  : Đang cào dữ liệu lời bài hát...")
     polarity_score = 0.0
+            group_scores = {k: 0.0 for k in EMOTION_GROUPS}
     
     EMOTION_WEIGHTS = {
         'excitement': 1.0, 'joy': 0.9, 'amusement': 0.8, 'optimism': 0.7, 'pride': 0.6,
@@ -327,6 +331,15 @@ for video in videos:
         'disapproval': -0.4, 'disgust': -0.5, 'anger': -0.6, 'fear': -0.7, 
         'disappointment': -0.8, 'remorse': -0.8, 'sadness': -0.9, 'grief': -1.0
     }
+
+# Nhóm cảm xúc cho 5 features NLP mới
+EMOTION_GROUPS = {
+    'joy': ['excitement', 'joy', 'amusement', 'optimism', 'pride'],
+    'sadness': ['sadness', 'grief', 'disappointment', 'remorse'],
+    'anger': ['anger', 'annoyance', 'disgust', 'disapproval'],
+    'love': ['love', 'caring', 'admiration', 'desire', 'gratitude'],
+    'fear': ['fear', 'nervousness', 'confusion', 'embarrassment'],
+}
     
     try:
         clean_title_for_lyrics = re.sub(r'\(.*?\)|\[.*?\]|official|music video|lyrics|audio|mv|lyric', '', raw_title, flags=re.IGNORECASE).strip()
@@ -340,7 +353,7 @@ for video in videos:
             print(f"                  => Đang tự động dịch lời sang Tiếng Anh để phân tích...")
             translated_lyrics = GoogleTranslator(source='auto', target='en').translate(clean_lyrics)
             
-            raw_results = emotion_pipeline(translated_lyrics[:1500], top_k=3)
+            raw_results = emotion_pipeline(translated_lyrics[:1500], top_k=10)
             ai_results = raw_results[0] if isinstance(raw_results[0], list) else raw_results
                 
             log_emotions = []
@@ -350,6 +363,10 @@ for video in videos:
                     score = res['score']
                     weight = EMOTION_WEIGHTS.get(label, 0.0)
                     polarity_score += (weight * score)
+                    # Phân loại vào nhóm
+                    for group_name, group_labels in EMOTION_GROUPS.items():
+                        if label in group_labels:
+                            group_scores[group_name] += score
                     log_emotions.append(f"{label.upper()}({score*100:.0f}%)")
             
             print(f"                  => Cảm xúc NLP (Top 3): {', '.join(log_emotions)}")
@@ -381,7 +398,18 @@ for video in videos:
                 'danceability': features['danceability'],
                 'spectral_centroid': features['spectral_centroid'],
                 'spectral_flatness': features['spectral_flatness'],
-                'lyrics_polarity': polarity_score
+                'zero_crossing_rate': features['zero_crossing_rate'],
+                'spectral_bandwidth': features['spectral_bandwidth'],
+                'spectral_rolloff': features['spectral_rolloff'],
+                'mfcc_mean': features['mfcc_mean'],
+                'chroma_mean': features['chroma_mean'],
+                'tempo_strength': features['tempo_strength'],
+                'lyrics_polarity': polarity_score,
+                'lyrics_joy': group_scores.get('joy', 0.0),
+                'lyrics_sadness': group_scores.get('sadness', 0.0),
+                'lyrics_anger': group_scores.get('anger', 0.0),
+                'lyrics_love': group_scores.get('love', 0.0),
+                'lyrics_fear': group_scores.get('fear', 0.0)
             }
             
             df_row = pd.DataFrame([row_data])

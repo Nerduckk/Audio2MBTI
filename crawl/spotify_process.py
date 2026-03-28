@@ -23,41 +23,6 @@ sp = spotipy.Spotify(auth_manager=SpotifyOAuth(
     scope="playlist-read-private"
 ))
 
-# 2. Module Khảo sát người dùng (MBTI Behavioral Survey)
-def get_user_survey():
-    print("\n" + "="*50)
-    print(" KHẢO SÁT THÓI QUEN NGHE NHẠC (AI DỰ ĐOÁN MBTI)")
-    print("="*50)
-    
-    score_E_I = 0  # Hướng ngoại (+) vs Hướng nội (-)
-    score_S_N = 0  # Thực tế (+) vs Trực giác (-)
-    score_J_P = 0  # Nguyên tắc (+) vs Linh hoạt (-)
-    
-    print("\nCâu 1: Bạn thường nghe nhạc trong hoàn cảnh nào nhất?")
-    print("  1. Tại các bữa tiệc, đi chơi cùng bạn bè, tập gym (E)")
-    print("  2. Khi ở một mình trong phòng, đọc sách, suy ngẫm (I)")
-    ans1 = input("Chọn (1 hoặc 2): ").strip()
-    score_E_I += 1 if ans1 == '1' else -1
-
-    print("\nCâu 2: Cách bạn quản lý danh sách nhạc (Playlist) ra sao?")
-    print("  1. Phân loại cực kỳ gọn gàng theo từng Mood/Thể loại riêng biệt (J)")
-    print("  2. Lưu lộn xộn, nghe Auto-play hoặc bấm Random ngẫu hứng (P)")
-    ans2 = input("Chọn (1 hoặc 2): ").strip()
-    score_J_P += 1 if ans2 == '1' else -1
-
-    print("\nCâu 3: Đâu là điểm thu hút bạn nhất ở một bài hát mới?")
-    print("  1. Giai điệu bắt tai, ca từ chân thực, miêu tả đời sống tình cảm (S)")
-    print("  2. Cấu trúc độc lạ, lời cá tính nhiều ẩn dụ, mang thông điệp viễn vông (N)")
-    ans3 = input("Chọn (1 hoặc 2): ").strip()
-    score_S_N += 1 if ans3 == '1' else -1
-    
-    print("\n=> Đã ghi nhận thói quen nghe nhạc của bạn!")
-    return {
-        'E_I_bias': score_E_I,
-        'S_N_bias': score_S_N,
-        'J_P_bias': score_J_P
-    }
-
 # 3. Hàm Tải Âm Thanh từ YouTube bằng yt-dlp
 def download_audio_from_youtube(query, filename="temp.mp3"):
     print(f"  -> Đang tìm kiếm trên YouTube: {query}")
@@ -275,13 +240,17 @@ EMOTION_WEIGHTS = {
     'disappointment': -0.8, 'remorse': -0.8, 'sadness': -0.9, 'grief': -1.0
 }
 
+# Nhóm cảm xúc cho 5 features NLP mới
+EMOTION_GROUPS = {
+    'joy': ['excitement', 'joy', 'amusement', 'optimism', 'pride'],
+    'sadness': ['sadness', 'grief', 'disappointment', 'remorse'],
+    'anger': ['anger', 'annoyance', 'disgust', 'disapproval'],
+    'love': ['love', 'caring', 'admiration', 'desire', 'gratitude'],
+    'fear': ['fear', 'nervousness', 'confusion', 'embarrassment'],
+}
+
 # 5. Chạy Quy Trình
 import sys
-
-# Tạm vô hiệu hóa Khảo sát (Survey) vì Backend tự động gọi Code này sẽ bị kẹt chờ phím.
-# Backend Web sẽ làm form HTML tự đẩy 3 luồng điểm Survey này vào thẳng Data.
-print(f"-> Đã vô hiệu hóa Survey. Điểm E/N/J được Web Backend xử lý độc lập trêm Form UI.\n")
-survey_results = {'E_I_bias': 0, 'S_N_bias': 0, 'J_P_bias': 0}
 
 # Chuẩn bị file CSV
 if len(sys.argv) > 2:
@@ -293,7 +262,10 @@ if not os.path.isfile(csv_filename):
         'title', 'artists', 'spotify_popularity', 'release_year', 'artist_genres',
         'genre_ei_score', 'genre_sn_score', 'genre_tf_score', 
         'tempo_bpm', 'energy', 'danceability', 'spectral_centroid', 
-        'spectral_flatness', 'lyrics_polarity', 'survey_E_I', 'survey_S_N', 'survey_J_P'
+        'spectral_flatness', 'zero_crossing_rate', 'spectral_bandwidth',
+        'spectral_rolloff', 'mfcc_mean', 'chroma_mean', 'tempo_strength',
+        'lyrics_polarity', 'lyrics_joy', 'lyrics_sadness',
+        'lyrics_anger', 'lyrics_love', 'lyrics_fear'
     ])
     df_empty.to_csv(csv_filename, index=False, encoding='utf-8-sig')
 
@@ -359,6 +331,7 @@ for track in tracks_data:
     # === B. LYRICS NLP (Phân tích Lời bài hát với AI HuggingFace) ===
     print(f"  [+] Lời nhạc  : Đang cào dữ liệu lời bài hát...")
     polarity_score = 0.0
+            group_scores = {k: 0.0 for k in EMOTION_GROUPS}
     try:
         # Ép dùng các nguồn mở để tránh lỗi 401 từ Musixmatch
         raw_lyrics = syncedlyrics.search(f"{name} {artists}", providers=["Lrclib", "NetEase", "MegLyrics"])
@@ -374,7 +347,7 @@ for track in tracks_data:
             # Dịch tự động ngôn ngữ gốc (auto) sang tiếng Anh (en)
             translated_lyrics = GoogleTranslator(source='auto', target='en').translate(clean_lyrics)
             
-            raw_results = emotion_pipeline(translated_lyrics[:1500], top_k=3)
+            raw_results = emotion_pipeline(translated_lyrics[:1500], top_k=10)
             ai_results = raw_results[0] if isinstance(raw_results[0], list) else raw_results
                 
             log_emotions = []
@@ -384,6 +357,10 @@ for track in tracks_data:
                     score = res['score']
                     weight = EMOTION_WEIGHTS.get(label, 0.0)
                     polarity_score += (weight * score)
+                    # Phân loại vào nhóm
+                    for group_name, group_labels in EMOTION_GROUPS.items():
+                        if label in group_labels:
+                            group_scores[group_name] += score
                     log_emotions.append(f"{label.upper()}({score*100:.0f}%)")
             
             print(f"                  => Cảm xúc NLP (Top 3): {', '.join(log_emotions)}")
@@ -422,10 +399,18 @@ for track in tracks_data:
                 'danceability': features['danceability'],
                 'spectral_centroid': features['spectral_centroid'],
                 'spectral_flatness': features['spectral_flatness'],
+                'zero_crossing_rate': features['zero_crossing_rate'],
+                'spectral_bandwidth': features['spectral_bandwidth'],
+                'spectral_rolloff': features['spectral_rolloff'],
+                'mfcc_mean': features['mfcc_mean'],
+                'chroma_mean': features['chroma_mean'],
+                'tempo_strength': features['tempo_strength'],
                 'lyrics_polarity': polarity_score,
-                'survey_E_I': survey_results['E_I_bias'],
-                'survey_S_N': survey_results['S_N_bias'],
-                'survey_J_P': survey_results['J_P_bias']
+                'lyrics_joy': group_scores.get('joy', 0.0),
+                'lyrics_sadness': group_scores.get('sadness', 0.0),
+                'lyrics_anger': group_scores.get('anger', 0.0),
+                'lyrics_love': group_scores.get('love', 0.0),
+                'lyrics_fear': group_scores.get('fear', 0.0)
             }
             pd.DataFrame([row_data]).to_csv(csv_filename, mode='a', header=False, index=False, encoding='utf-8-sig')
             success_count += 1

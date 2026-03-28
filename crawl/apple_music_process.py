@@ -278,7 +278,7 @@ def analyze_lyrics(title, artist):
         # --- BỘ PHÂN TÍCH TOÀN CẦU (HUGGINGFACE) ---
         translated_lyrics = GoogleTranslator(source='auto', target='en').translate(clean_lyrics[:1500])
         
-        raw_results = emotion_pipeline(translated_lyrics[:1500], top_k=3)
+        raw_results = emotion_pipeline(translated_lyrics[:1500], top_k=10)
         ai_results = raw_results[0] if isinstance(raw_results[0], list) else raw_results
             
         EMOTION_WEIGHTS = {
@@ -290,8 +290,18 @@ def analyze_lyrics(title, artist):
             'disapproval': -0.4, 'disgust': -0.5, 'anger': -0.6, 'fear': -0.7, 
             'disappointment': -0.8, 'remorse': -0.8, 'sadness': -0.9, 'grief': -1.0
         }
+
+# Nhóm cảm xúc cho 5 features NLP mới
+EMOTION_GROUPS = {
+    'joy': ['excitement', 'joy', 'amusement', 'optimism', 'pride'],
+    'sadness': ['sadness', 'grief', 'disappointment', 'remorse'],
+    'anger': ['anger', 'annoyance', 'disgust', 'disapproval'],
+    'love': ['love', 'caring', 'admiration', 'desire', 'gratitude'],
+    'fear': ['fear', 'nervousness', 'confusion', 'embarrassment'],
+}
         
         polarity_score = 0.0
+            group_scores = {k: 0.0 for k in EMOTION_GROUPS}
         for res in ai_results:
             if isinstance(res, dict) and 'label' in res:
                 polarity_score += (EMOTION_WEIGHTS.get(res['label'].lower(), 0.0) * res['score'])
@@ -325,7 +335,10 @@ if __name__ == "__main__":
             'title', 'artists', 'spotify_popularity', 'release_year', 'artist_genres',
             'genre_ei_score', 'genre_sn_score', 'genre_tf_score', 
             'tempo_bpm', 'energy', 'danceability', 'spectral_centroid', 
-            'spectral_flatness', 'lyrics_polarity'
+            'spectral_flatness', 'zero_crossing_rate', 'spectral_bandwidth',
+        'spectral_rolloff', 'mfcc_mean', 'chroma_mean', 'tempo_strength',
+        'lyrics_polarity', 'lyrics_joy', 'lyrics_sadness',
+        'lyrics_anger', 'lyrics_love', 'lyrics_fear'
         ])
         df_empty.to_csv(csv_filename, index=False, encoding='utf-8-sig')
 
@@ -372,7 +385,18 @@ if __name__ == "__main__":
                     'danceability': features['danceability'],
                     'spectral_centroid': features['spectral_centroid'],
                     'spectral_flatness': features['spectral_flatness'],
-                    'lyrics_polarity': polarity_score
+                'zero_crossing_rate': features['zero_crossing_rate'],
+                'spectral_bandwidth': features['spectral_bandwidth'],
+                'spectral_rolloff': features['spectral_rolloff'],
+                'mfcc_mean': features['mfcc_mean'],
+                'chroma_mean': features['chroma_mean'],
+                'tempo_strength': features['tempo_strength'],
+                    'lyrics_polarity': polarity_score,
+                'lyrics_joy': group_scores.get('joy', 0.0),
+                'lyrics_sadness': group_scores.get('sadness', 0.0),
+                'lyrics_anger': group_scores.get('anger', 0.0),
+                'lyrics_love': group_scores.get('love', 0.0),
+                'lyrics_fear': group_scores.get('fear', 0.0)
                 }
                 
                 df_row = pd.DataFrame([row_data])

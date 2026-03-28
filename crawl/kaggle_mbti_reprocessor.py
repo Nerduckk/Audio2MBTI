@@ -17,6 +17,15 @@ import urllib.parse
 
 warnings.filterwarnings("ignore")
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:128'
+os.environ['OMP_NUM_THREADS'] = '2'  # Giới hạn CPU threads cho torch
+os.environ['TOKENIZERS_PARALLELISM'] = 'false'
+
+import gc
+import torch
+if torch.cuda.is_available():
+    torch.cuda.set_per_process_memory_fraction(0.3)  # Chỉ dùng 30% GPU RAM
+
 
 print("=> Đang khởi động Mô Hình AI HuggingFace cho NLP (go_emotions)...")
 emotion_pipeline = pipeline("text-classification", model="SamLowe/roberta-base-go_emotions")
@@ -191,7 +200,7 @@ def librosa_analysis_advanced(audio_path):
     try:
         y, sr = librosa.load(audio_path, sr=22050, duration=35)
         
-        tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
+        tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr)
         tempo = float(tempo[0]) if isinstance(tempo, np.ndarray) else float(tempo)
         
         rms = librosa.feature.rms(y=y)
@@ -203,6 +212,24 @@ def librosa_analysis_advanced(audio_path):
         spectral_centroid = float(np.mean(librosa.feature.spectral_centroid(y=y, sr=sr)))
         spectral_flatness = float(np.mean(librosa.feature.spectral_flatness(y=y)))
         
+        # === 6 FEATURES MỚI ===
+        zcr = float(np.mean(librosa.feature.zero_crossing_rate(y=y)))
+        
+        spec_bw = float(np.mean(librosa.feature.spectral_bandwidth(y=y, sr=sr)))
+        spec_bw_norm = min(1.0, spec_bw / 4000.0)
+        
+        rolloff = float(np.mean(librosa.feature.spectral_rolloff(y=y, sr=sr)))
+        rolloff_norm = min(1.0, rolloff / 8000.0)
+        
+        mfccs = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13)
+        mfcc_mean = float(np.mean(mfccs))
+        
+        chroma = librosa.feature.chroma_stft(y=y, sr=sr)
+        chroma_mean = float(np.mean(chroma))
+        
+        tempo_strength = float(np.max(onset_env)) if len(onset_env) > 0 else 0.0
+        tempo_strength_norm = min(1.0, tempo_strength / 5.0)
+        
         # Scaling
         energy = min(energy / 0.3, 1.0)
         danceability = min(danceability / 10.0, 1.0)
@@ -212,10 +239,16 @@ def librosa_analysis_advanced(audio_path):
             'energy': round(energy, 4),
             'danceability': round(danceability, 4),
             'spectral_centroid': round(spectral_centroid, 1),
-            'spectral_flatness': round(spectral_flatness, 4)
+            'spectral_flatness': round(spectral_flatness, 4),
+            'zero_crossing_rate': round(zcr, 4),
+            'spectral_bandwidth': round(spec_bw_norm, 4),
+            'spectral_rolloff': round(rolloff_norm, 4),
+            'mfcc_mean': round(mfcc_mean, 4),
+            'chroma_mean': round(chroma_mean, 4),
+            'tempo_strength': round(tempo_strength_norm, 4),
         }
     except Exception as e:
-        print(f"    ❌ Lỗi Librosa: Không thể phân tích - {e}")
+        print(f"    ❌ Lỗi Librosa: Không thể phân tích - {e}")
         return None
 
 EMOTION_WEIGHTS = {
@@ -228,11 +261,25 @@ EMOTION_WEIGHTS = {
     'disappointment': -0.8, 'remorse': -0.8, 'sadness': -0.9, 'grief': -1.0
 }
 
+# Nhóm cảm xúc cho 5 features NLP mới
+EMOTION_GROUPS = {
+    'joy': ['excitement', 'joy', 'amusement', 'optimism', 'pride'],
+    'sadness': ['sadness', 'grief', 'disappointment', 'remorse'],
+    'anger': ['anger', 'annoyance', 'disgust', 'disapproval'],
+    'love': ['love', 'caring', 'admiration', 'desire', 'gratitude'],
+    'fear': ['fear', 'nervousness', 'confusion', 'embarrassment'],
+}
+
 def analyze_lyrics_sentiment(track_name, artist_name):
+    """Trả về dict gồm polarity + 5 nhóm cảm xúc chi tiết."""
+    default_result = {
+        'lyrics_polarity': 0.0, 'lyrics_joy': 0.0, 'lyrics_sadness': 0.0,
+        'lyrics_anger': 0.0, 'lyrics_love': 0.0, 'lyrics_fear': 0.0
+    }
     query = f"{track_name} {artist_name}"
     try:
         raw_lyrics = syncedlyrics.search(query, providers=["Lrclib", "NetEase", "MegLyrics"])
-        if not raw_lyrics: return 0.0
+        if not raw_lyrics: return default_result
         
         clean_lyrics = re.sub(r'\[\d{2}:\d{2}\.\d{2}\]', '', raw_lyrics).strip()
         clean_lyrics = clean_lyrics[:2000]
@@ -248,13 +295,17 @@ def analyze_lyrics_sentiment(track_name, artist_name):
                 elif vn_sen == 'negative': vn_boost = -0.3
             except: pass
         
-        # --- BỘ PHÂN TÍCH TOÀN CẦU (HUGGINGFACE) ---
+        # --- BỘ PHÂN TÍCH TOÀN CẦU (HUGGINGFACE) - Lấy TOP 10 cảm xúc ---
         translated_lyrics = GoogleTranslator(source='auto', target='en').translate(clean_lyrics)
         
-        raw_results = emotion_pipeline(translated_lyrics[:1500], top_k=3)
+        raw_results = emotion_pipeline(translated_lyrics[:1500], top_k=10)
         ai_results = raw_results[0] if isinstance(raw_results[0], list) else raw_results
-            
+        
+        # Tính polarity tổng (giữ lại tương thích)
         polarity_score = 0.0
+        # Tính 5 nhóm cảm xúc
+        group_scores = {k: 0.0 for k in EMOTION_GROUPS}
+        
         for res in ai_results:
             if isinstance(res, dict) and 'label' in res:
                 label = res['label'].lower()
@@ -262,10 +313,23 @@ def analyze_lyrics_sentiment(track_name, artist_name):
                 weight = EMOTION_WEIGHTS.get(label, 0.0)
                 polarity_score += (weight * score)
                 
-        final_score = polarity_score + vn_boost
-        return round(max(-1.0, min(1.0, final_score)), 4)
+                # Phân loại vào nhóm
+                for group_name, group_labels in EMOTION_GROUPS.items():
+                    if label in group_labels:
+                        group_scores[group_name] += score
+        
+        final_polarity = round(max(-1.0, min(1.0, polarity_score + vn_boost)), 4)
+        
+        return {
+            'lyrics_polarity': final_polarity,
+            'lyrics_joy': round(group_scores['joy'], 4),
+            'lyrics_sadness': round(group_scores['sadness'], 4),
+            'lyrics_anger': round(group_scores['anger'], 4),
+            'lyrics_love': round(group_scores['love'], 4),
+            'lyrics_fear': round(group_scores['fear'], 4),
+        }
     except Exception:
-        return 0.0
+        return default_result
 
 def mass_reprocess_kaggle():
     print("==================================================")
@@ -321,7 +385,10 @@ def mass_reprocess_kaggle():
             'title', 'artists', 'spotify_popularity', 'release_year', 'artist_genres',
             'genre_ei_score', 'genre_sn_score', 'genre_tf_score', 
             'tempo_bpm', 'energy', 'danceability', 'spectral_centroid', 
-            'spectral_flatness', 'lyrics_polarity', 'mbti_label'
+            'spectral_flatness', 'zero_crossing_rate', 'spectral_bandwidth',
+            'spectral_rolloff', 'mfcc_mean', 'chroma_mean', 'tempo_strength',
+            'lyrics_polarity', 'lyrics_joy', 'lyrics_sadness',
+            'lyrics_anger', 'lyrics_love', 'lyrics_fear', 'mbti_label'
         ])
         df_empty.to_csv(output_csv, index=False, encoding='utf-8-sig')
 
@@ -413,7 +480,7 @@ def mass_reprocess_kaggle():
                     
                 # Lyrics NLP
                 print("    [~] Đang đọc lời bài hát (NLP)...")
-                polarity = analyze_lyrics_sentiment(name, artists)
+                nlp_result = analyze_lyrics_sentiment(name, artists)
                 
                 # Lưu
                 new_row = {
@@ -430,13 +497,25 @@ def mass_reprocess_kaggle():
                     'danceability': features['danceability'],
                     'spectral_centroid': features['spectral_centroid'],
                     'spectral_flatness': features['spectral_flatness'],
-                    'lyrics_polarity': polarity,
+                    'zero_crossing_rate': features['zero_crossing_rate'],
+                    'spectral_bandwidth': features['spectral_bandwidth'],
+                    'spectral_rolloff': features['spectral_rolloff'],
+                    'mfcc_mean': features['mfcc_mean'],
+                    'chroma_mean': features['chroma_mean'],
+                    'tempo_strength': features['tempo_strength'],
+                    'lyrics_polarity': nlp_result['lyrics_polarity'],
+                    'lyrics_joy': nlp_result['lyrics_joy'],
+                    'lyrics_sadness': nlp_result['lyrics_sadness'],
+                    'lyrics_anger': nlp_result['lyrics_anger'],
+                    'lyrics_love': nlp_result['lyrics_love'],
+                    'lyrics_fear': nlp_result['lyrics_fear'],
                     'mbti_label': mbti_label
                 }
                 
                 pd.DataFrame([new_row]).to_csv(output_csv, mode='a', header=not os.path.exists(output_csv), index=False, encoding='utf-8-sig')
                 processed_songs.add(song_key)
                 print(f"    ✅ DONE. Đã thêm Data vào {output_csv}.")
+                gc.collect()  # Giải phóng RAM sau mỗi bài
 
         except Exception as e:
             print(f"⚠️ Lỗi xử lý playlist {pid}: {e}")
