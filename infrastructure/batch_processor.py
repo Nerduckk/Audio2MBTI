@@ -6,6 +6,7 @@ Optimizes CSV writes and data processing with batching
 import pandas as pd
 import os
 import json
+import threading
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 from pathlib import Path
@@ -34,6 +35,7 @@ class BatchProcessor:
         self.total_processed = 0
         self.total_saved = 0
         self.file_exists = False
+        self._lock = threading.Lock()
         
         if output_file and os.path.exists(output_file):
             self.file_exists = True
@@ -48,10 +50,13 @@ class BatchProcessor:
         Returns:
             True if batch was flushed, False otherwise
         """
-        self.batch.append(record)
-        self.total_processed += 1
-        
-        if len(self.batch) >= self.batch_size:
+        should_flush = False
+        with self._lock:
+            self.batch.append(record)
+            self.total_processed += 1
+            should_flush = len(self.batch) >= self.batch_size
+
+        if should_flush:
             self.flush()
             return True
         return False
@@ -63,13 +68,18 @@ class BatchProcessor:
         Returns:
             Number of records written
         """
-        if not self.batch or not self.output_file:
+        if not self.output_file:
             return 0
-        
+
+        with self._lock:
+            if not self.batch:
+                return 0
+            batch_to_write = self.batch
+            self.batch = []
+
         try:
-            df = pd.DataFrame(self.batch)
-            
-            # Append to existing file or create new
+            df = pd.DataFrame(batch_to_write)
+
             if self.file_exists:
                 df.to_csv(
                     self.output_file,
@@ -85,17 +95,18 @@ class BatchProcessor:
                     encoding='utf-8'
                 )
                 self.file_exists = True
-            
-            records_written = len(self.batch)
-            self.total_saved += records_written
-            
+
+            records_written = len(batch_to_write)
+            with self._lock:
+                self.total_saved += records_written
+
             logger.info(f"Batch saved: {records_written} records to {self.output_file} "
                        f"(Total: {self.total_saved}/{self.total_processed})")
-            
-            self.batch = []
             return records_written
-        
+
         except Exception as e:
+            with self._lock:
+                self.batch = batch_to_write + self.batch
             logger.error(f"Failed to save batch: {e}")
             return 0
     

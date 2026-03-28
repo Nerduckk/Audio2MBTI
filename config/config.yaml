@@ -30,23 +30,13 @@ logging:
 data:
   master_csv: "mbti_master_training_data.csv"
   backup_csv: "mbti_master_training_data_BACKUP.csv"
-  batch_size: 25  # Number of rows to batch before saving
+  batch_size: 50  # Number of rows to batch before saving
   validation_enabled: true
   quality_metrics_enabled: true
 
 # Crawler Output Configuration
 crawlers:
-  kaggle_csv: "mbti_database_kaggle_reprocessed.csv"
-  spotify_csv: "mbti_database_spotify.csv"
-  youtube_csv: "mbti_database_youtube.csv"
-  applemusic_csv: "mbti_database_applemusic.csv"
-  survey_csv: "mbti_database_survey.csv"
-  # Files to merge for master database
-  merge_sources:
-    - "mbti_database_kaggle_reprocessed.csv"
-    - "mbti_database_spotify.csv"
-    - "mbti_database_youtube.csv"
-    - "mbti_database_applemusic.csv"
+  kaggle_csv: "mbti_master_training_data.csv"
 
 # Audio Analysis Configuration
 audio:
@@ -121,8 +111,11 @@ validation:
   required_columns:
     - "title"
     - "artists"
-    - "genre"
-    - "tempo"
+    - "artist_genres"
+    - "tempo_bpm"
+    - "energy"
+    - "danceability"
+    - "spectral_centroid"
     - "lyrics_polarity"
     - "mbti_label"
 
@@ -144,27 +137,23 @@ monitoring:
 # Feature Configuration
 features:
   audio_features:
-    - "tempo"
+    - "tempo_bpm"
     - "tempo_strength"
     - "energy"
     - "danceability"
-    - "valence"
-    - "acousticness"
-    - "instrumentalness"
-    - "liveness"
-    - "speechiness"
-    - "loudness"
     - "zero_crossing_rate"
     - "spectral_bandwidth"
     - "spectral_centroid"
     - "mfcc_mean"
-    - "mfcc_std"
+    - "chroma_mean"
   
   nlp_features:
     - "lyrics_polarity"
-    - "lyrics_wordcount"
-    - "emotion_class"
-    - "emotion_confidence"
+    - "lyrics_joy"
+    - "lyrics_sadness"
+    - "lyrics_anger"
+    - "lyrics_love"
+    - "lyrics_fear"
 
 # Preprocessing Configuration
 preprocessing:

@@ -3,11 +3,14 @@ Data Validation Module
 Validates input data, audio features, and output data quality
 """
 
-import pandas as pd
-import numpy as np
-from typing import Dict, List, Tuple, Any, Optional
-from datetime import datetime
 import json
+import os
+from datetime import datetime
+from typing import Any, Dict, List, Tuple
+
+import numpy as np
+import pandas as pd
+
 from .config_loader import ConfigLoader, get_logger
 
 logger = get_logger(__name__)
@@ -41,14 +44,15 @@ class DataValidator:
         ranges = self.config.get("audio_features", {})
         
         validation_rules = {
-            "tempo": ranges.get("tempo_range", [60, 240]),
+            "tempo_bpm": ranges.get("tempo_range", [60, 240]),
             "energy": ranges.get("energy_range", [0, 1]),
             "danceability": ranges.get("danceability_range", [0, 1]),
-            "valence": ranges.get("valence_range", [0, 1]),
-            "acousticness": ranges.get("acousticness_range", [0, 1]),
-            "instrumentalness": ranges.get("instrumentalness_range", [0, 1]),
-            "liveness": ranges.get("liveness_range", [0, 1]),
-            "speechiness": ranges.get("speechiness_range", [0, 1]),
+            "spectral_centroid": [0, 10000],
+            "spectral_flatness": [0, 1],
+            "zero_crossing_rate": [0, 1],
+            "spectral_bandwidth": [0, 1],
+            "spectral_rolloff": [0, 1],
+            "tempo_strength": [0, 1],
         }
         
         for feature, valid_range in validation_rules.items():
@@ -149,16 +153,17 @@ class DataValidator:
                     errors.append(f"NaN value in required column: {col}")
         
         # Validate specific fields if present
-        if "tempo" in row and row["tempo"] is not None:
+        if "tempo_bpm" in row and row["tempo_bpm"] is not None:
             is_valid, feature_errors = self.validate_audio_features({
-                "tempo": row.get("tempo"),
+                "tempo_bpm": row.get("tempo_bpm"),
                 "energy": row.get("energy", 0.5),
                 "danceability": row.get("danceability", 0.5),
-                "valence": row.get("valence", 0.5),
-                "acousticness": row.get("acousticness", 0.5),
-                "instrumentalness": row.get("instrumentalness", 0.5),
-                "liveness": row.get("liveness", 0.5),
-                "speechiness": row.get("speechiness", 0.5),
+                "spectral_centroid": row.get("spectral_centroid", 0.0),
+                "spectral_flatness": row.get("spectral_flatness", 0.0),
+                "zero_crossing_rate": row.get("zero_crossing_rate", 0.0),
+                "spectral_bandwidth": row.get("spectral_bandwidth", 0.0),
+                "spectral_rolloff": row.get("spectral_rolloff", 0.0),
+                "tempo_strength": row.get("tempo_strength", 0.0),
             })
             if not is_valid:
                 errors.extend(feature_errors)
@@ -265,6 +270,3 @@ class DataValidator:
             json.dump(validation_report, f, indent=2, ensure_ascii=False, default=str)
         
         logger.info(f"Validation report saved to {filepath}")
-
-
-import os

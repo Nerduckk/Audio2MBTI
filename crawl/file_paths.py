@@ -58,31 +58,27 @@ def get_kaggle_csv():
 
 def get_spotify_csv():
     """Get path for Spotify crawler output CSV"""
-    return get_csv_path('spotify_csv')
+    raise ValueError("Spotify CSV path is no longer used in the Kaggle-only pipeline")
 
 
 def get_youtube_csv():
     """Get path for YouTube crawler output CSV"""
-    return get_csv_path('youtube_csv')
+    raise ValueError("YouTube CSV path is no longer used in the Kaggle-only pipeline")
 
 
 def get_applemusic_csv():
     """Get path for Apple Music crawler output CSV"""
-    return get_csv_path('applemusic_csv')
+    raise ValueError("Apple Music CSV path is no longer used in the Kaggle-only pipeline")
 
 
 def get_survey_csv():
     """Get path for survey data CSV"""
-    return get_csv_path('survey_csv')
+    raise ValueError("Survey CSV path is no longer used in the Kaggle-only pipeline")
 
 
 def get_merge_sources():
     """Get list of CSV files to merge for master database"""
-    data_dir = get_data_dir()
-    crawler_config = config.get('crawlers', {})
-    sources = crawler_config.get('merge_sources', [])
-    
-    return [os.path.join(data_dir, source) for source in sources]
+    return [get_master_csv_path()]
 
 
 def ensure_data_dir_exists():

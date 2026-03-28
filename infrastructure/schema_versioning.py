@@ -52,16 +52,15 @@ class SchemaVersionControl:
         "1.0": SchemaVersion(
             "1.0",
             [
-                "title", "artists", "album", "release_date", "genre",
-                "tempo", "tempo_strength", "energy", "danceability", "valence",
-                "acousticness", "instrumentalness", "liveness", "speechiness", "loudness",
-                "zero_crossing_rate", "spectral_bandwidth", "spectral_centroid",
-                "mfcc_mean", "mfcc_std",
-                "lyrics", "lyrics_wordcount", "lyrics_polarity",
-                "emotion_class", "emotion_confidence",
-                "genre_ei", "genre_sn", "genre_tf", "mbti_label"
+                "title", "artists", "spotify_popularity", "release_year", "artist_genres",
+                "genre_ei_score", "genre_sn_score", "genre_tf_score",
+                "tempo_bpm", "energy", "danceability", "spectral_centroid",
+                "spectral_flatness", "zero_crossing_rate", "spectral_bandwidth",
+                "spectral_rolloff", "mfcc_mean", "chroma_mean", "tempo_strength",
+                "lyrics_polarity", "lyrics_joy", "lyrics_sadness",
+                "lyrics_anger", "lyrics_love", "lyrics_fear", "mbti_label"
             ],
-            "Initial schema with audio features, lyrics sentiment, and MBTI labels"
+            "Current training schema with shared audio, lyrics sentiment, and MBTI labels"
         )
     }
     

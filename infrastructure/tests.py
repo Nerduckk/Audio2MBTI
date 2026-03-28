@@ -1,20 +1,17 @@
 """
 Unit Tests and Integration Tests for Audio2MBTI
-Run with: python -m pytest tests/
+Run with: python -m infrastructure.tests
 """
 
 import unittest
-from unittest.mock import Mock, patch, MagicMock
 import pandas as pd
 import numpy as np
-from io import StringIO
 import sys
 
-# Import modules to test (assuming they're in parent directory)
-from data_validator import DataValidator
-from retry_logic import RetryConfig, RateLimiter
-from batch_processor import BatchProcessor
-from schema_versioning import SchemaVersionControl
+from infrastructure.batch_processor import BatchProcessor
+from infrastructure.data_validator import DataValidator
+from infrastructure.retry_logic import RateLimiter, RetryConfig
+from infrastructure.schema_versioning import SchemaVersionControl
 
 
 class TestDataValidator(unittest.TestCase):
@@ -26,14 +23,15 @@ class TestDataValidator(unittest.TestCase):
     def test_validate_audio_features_valid(self):
         """Test validation with valid audio features"""
         features = {
-            "tempo": 120,
+            "tempo_bpm": 120,
             "energy": 0.7,
             "danceability": 0.65,
-            "valence": 0.5,
-            "acousticness": 0.3,
-            "instrumentalness": 0.1,
-            "liveness": 0.2,
-            "speechiness": 0.05
+            "spectral_centroid": 2500,
+            "spectral_flatness": 0.3,
+            "zero_crossing_rate": 0.08,
+            "spectral_bandwidth": 0.4,
+            "spectral_rolloff": 0.5,
+            "tempo_strength": 0.4,
         }
         
         is_valid, errors = self.validator.validate_audio_features(features)
@@ -43,31 +41,33 @@ class TestDataValidator(unittest.TestCase):
     def test_validate_audio_features_invalid_range(self):
         """Test validation with out-of-range values"""
         features = {
-            "tempo": 400,  # Out of range
+            "tempo_bpm": 400,  # Out of range
             "energy": 0.7,
             "danceability": 0.65,
-            "valence": 0.5,
-            "acousticness": 0.3,
-            "instrumentalness": 0.1,
-            "liveness": 0.2,
-            "speechiness": 0.05
+            "spectral_centroid": 2500,
+            "spectral_flatness": 0.3,
+            "zero_crossing_rate": 0.08,
+            "spectral_bandwidth": 0.4,
+            "spectral_rolloff": 0.5,
+            "tempo_strength": 0.4,
         }
         
         is_valid, errors = self.validator.validate_audio_features(features)
         self.assertFalse(is_valid)
-        self.assertTrue(any("tempo" in e for e in errors))
+        self.assertTrue(any("tempo_bpm" in e for e in errors))
     
     def test_validate_audio_features_nan(self):
         """Test validation with NaN values"""
         features = {
-            "tempo": np.nan,
+            "tempo_bpm": np.nan,
             "energy": 0.7,
             "danceability": 0.65,
-            "valence": 0.5,
-            "acousticness": 0.3,
-            "instrumentalness": 0.1,
-            "liveness": 0.2,
-            "speechiness": 0.05
+            "spectral_centroid": 2500,
+            "spectral_flatness": 0.3,
+            "zero_crossing_rate": 0.08,
+            "spectral_bandwidth": 0.4,
+            "spectral_rolloff": 0.5,
+            "tempo_strength": 0.4,
         }
         
         is_valid, errors = self.validator.validate_audio_features(features)
@@ -79,13 +79,13 @@ class TestDataValidator(unittest.TestCase):
         row = {
             "title": "Test Song",
             # Missing artists
-            "genre": "pop",
-            "tempo": 120
+            "artist_genres": "pop",
+            "tempo_bpm": 120
         }
         
         is_valid, errors = self.validator.validate_row(
             row,
-            required_columns=["title", "artists", "genre"]
+            required_columns=["title", "artists", "artist_genres"]
         )
         
         self.assertFalse(is_valid)
@@ -255,30 +255,22 @@ class TestIntegrationWorkflow(unittest.TestCase):
             {
                 "title": "Song 1",
                 "artists": "Artist 1",
-                "genre": "pop",
-                "tempo": 120,
+                "artist_genres": "pop",
+                "tempo_bpm": 120,
                 "energy": 0.7,
                 "danceability": 0.6,
-                "valence": 0.5,
-                "acousticness": 0.3,
-                "instrumentalness": 0.1,
-                "liveness": 0.2,
-                "speechiness": 0.05,
+                "spectral_centroid": 2500,
                 "lyrics_polarity": 0.5,
                 "mbti_label": "ENFP"
             },
             {
                 "title": "Song 2",
                 "artists": "Artist 2",
-                "genre": "rock",
-                "tempo": 140,
+                "artist_genres": "rock",
+                "tempo_bpm": 140,
                 "energy": 0.8,
                 "danceability": 0.5,
-                "valence": 0.6,
-                "acousticness": 0.2,
-                "instrumentalness": 0.2,
-                "liveness": 0.3,
-                "speechiness": 0.06,
+                "spectral_centroid": 3000,
                 "lyrics_polarity": 0.6,
                 "mbti_label": "ISTJ"
             }
@@ -287,7 +279,7 @@ class TestIntegrationWorkflow(unittest.TestCase):
         valid_count = 0
         for record in records:
             # Validate before processing
-            required_cols = ["title", "artists", "genre", "mbti_label"]
+            required_cols = ["title", "artists", "artist_genres", "mbti_label"]
             is_valid, errors = validator.validate_row(record, required_cols)
             
             if is_valid:
