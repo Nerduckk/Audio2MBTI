@@ -1,10 +1,20 @@
 import pandas as pd
 import os
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from infrastructure.config_loader import ConfigLoader, get_logger
+from infrastructure.monitoring import PerformanceMonitor
+
+config = ConfigLoader.load()
+logger = get_logger(__name__)
 
 def aggregate_all_data():
-    print("==================================================")
-    print("🌪️ MÁY XAY SINH TỐ DATA MBTI (GỘP TẤT CẢ VÀO 1)")
-    print("==================================================")
+    logger.info("="*50)
+    logger.info("Starting data aggregation - combining all sources")
+    logger.info("="*50)
     
     data_dir = r"data"
     output_master = os.path.join(data_dir, "mbti_master_training_data.csv")
@@ -29,26 +39,26 @@ def aggregate_all_data():
                 
                 # Bỏ qua các file trống rỗng (chỉ có header)
                 if len(df) > 0:
-                    print(f"✅ Đã hút thành công: {filename} ({len(df)} bài hát)")
+                    logger.info(f"✓ Loaded: {filename} ({len(df)} rows)")
                     all_dataframes.append(df)
                     total_rows += len(df)
                 else:
-                    print(f"⚠️ Trống rỗng, bỏ qua: {filename}")
+                    logger.warning(f"⊘ Empty file: {filename}")
             except Exception as e:
-                print(f"❌ Lỗi khi đọc {filename}: {e}")
+                logger.error(f"✗ Error: {e}")
         else:
-            print(f"🫥 Không tìm thấy file (Chưa cào bao giờ): {filename}")
+            logger.warning(f"⊘ Not found: {filename}")
 
     if not all_dataframes:
-        print("\n❌ Không có bất kỳ Data nào để gộp cả!")
+        logger.error("No data to aggregate!")
         return
 
-    print("\n⏳ Đang nhào lộn và gộp các mảng màu lại với nhau...")
+    logger.info(f"Merging {len(all_dataframes)} sources ({total_rows} total rows)...")
     master_df = pd.concat(all_dataframes, ignore_index=True)
     
     # DỌN DẸP SƠ CẤP DATA MASTER
     # 1. Quét Trùng Lặp bằng (Tên Bài + Ca Sĩ)
-    print("🧹 Đang chà rửa, khử mụn trùng lặp...")
+    print(" Đang chà rửa, khử mụn trùng lặp...")
     master_df['title_clean'] = master_df['title'].astype(str).str.strip().str.lower()
     master_df['artist_clean'] = master_df['artists'].astype(str).str.strip().str.lower()
     
@@ -58,20 +68,16 @@ def aggregate_all_data():
     
     duplicates_removed = initial_len - len(master_df)
     if duplicates_removed > 0:
-        print(f"   -> Đã quét sạch {duplicates_removed} bài hát bị trùng lặp xuyên quốc gia (cùng xuất hiện ở cả Spotify/Apple/Kaggle)!")
+        logger.info(f"✓ Removed {duplicates_removed} duplicates")
 
-    # Lưu thành phẩm Master
+    # Save to master CSV
     master_df.to_csv(output_master, index=False, encoding='utf-8-sig')
     
-    print("\n==================================================")
-    print(f"🎉 GỘP DATA THÀNH CÔNG! ĐÃ ĐÚC RA SIÊU KIẾM MASTER TẠI:")
-    print(f"   📎 {output_master}")
-    print(f"   => Kích thước Siêu Kiếm: {len(master_df)} BÀI HÁT TÍNH CÁCH (100% Sạch sành sanh)")
-    print("==================================================")
-    
-    # Hỏi người dùng có muốn tự tin XÓA các file mảnh vỡ cũ cho bớt rối không
-    print("\n💡 Gợi ý: Giờ bạn đã có file Siêu Kiếm Master, những file lẻ tẻ cũ đã trở thành Rác.")
-    print("Bạn có thể tự tay bôi đen xoá thủ công các file cũ (Trừ cái survey_results) trong thư mục /data cho nhẹ máy nha!")
+    logger.info("="*50)
+    logger.info(f"✓ Aggregation complete!")
+    logger.info(f"Output: {output_master}")
+    logger.info(f"Total: {len(master_df)} songs (100% clean)")
+    logger.info("="*50)
 
 if __name__ == "__main__":
     aggregate_all_data()

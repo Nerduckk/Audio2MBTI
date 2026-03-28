@@ -14,6 +14,13 @@ from transformers import pipeline
 from deep_translator import GoogleTranslator
 import requests
 import urllib.parse
+from bs4 import BeautifulSoup
+import json
+import random
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 warnings.filterwarnings("ignore")
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
@@ -102,7 +109,10 @@ def get_accurate_multi_genre(clean_title, clean_artist, track_obj=None, sp=None)
                 # Lấy năm phát hành (Cắt 4 số đầu VD: "2015-10-23" -> "2015")
                 release_date = result.get('releaseDate', '')
                 if len(release_date) >= 4:
-                    release_year = int(release_date[:4])
+                    try:
+                        release_year = int(release_date[:4])
+                    except ValueError:
+                        release_year = 2020
                     
                 apple_genres = result.get('genres', [])
                 primary = result.get('primaryGenreName')
@@ -130,7 +140,6 @@ def get_accurate_multi_genre(clean_title, clean_artist, track_obj=None, sp=None)
     if not found_genres: found_genres = ["pop"]
     
     # Heuristic Popularity (Giả lập ngẫu nhiên dựa trên Thể loại nhạc & Năm sinh - Vd: Nhạc Pop mới thì dễ xu hướng hơn)
-    import random
     base_pop = random.randint(30, 60)
     if 'pop' in found_genres or 'dance' in found_genres: base_pop += random.randint(10, 30)
     if 'indie' in found_genres or 'lofi' in found_genres: base_pop -= random.randint(5, 15)
@@ -145,9 +154,12 @@ def get_accurate_multi_genre(clean_title, clean_artist, track_obj=None, sp=None)
         'popularity': popularity
     }
 
-# Cấu hình Spotify (Dùng 1 Key nhưng chiến thuật lấy ít)
-CLIENT_ID = "349f78648a854a66ba2ad1eef7b849b9"
-CLIENT_SECRET = "e17ab759564c481a91a694edbb3be9d0"
+# Cấu hình Spotify (Load từ .env file)
+CLIENT_ID = os.getenv('SPOTIFY_CLIENT_ID')
+CLIENT_SECRET = os.getenv('SPOTIFY_CLIENT_SECRET')
+
+if not CLIENT_ID or not CLIENT_SECRET:
+    raise ValueError("Spotify credentials not found in .env file. Please add SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET.")
 
 def get_spotify_client():
     return spotipy.Spotify(auth_manager=SpotifyClientCredentials(
@@ -193,7 +205,7 @@ def download_audio_segment(query, duration=35):
             print(f"    [!] Lỗi FFmpeg: File {audio_path} không được tạo ra. Có thể tải nhầm định dạng.")
             return None
     except Exception as e:
-        print(f"❌ Lỗi tải yt-dlp: {e}")
+        print(f" Lỗi tải yt-dlp: {e}")
         return None
 
 def librosa_analysis_advanced(audio_path):
@@ -201,7 +213,7 @@ def librosa_analysis_advanced(audio_path):
         y, sr = librosa.load(audio_path, sr=22050, duration=35)
         
         tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr)
-        tempo = float(tempo[0]) if isinstance(tempo, np.ndarray) else float(tempo)
+        tempo = float(np.mean(tempo)) if isinstance(tempo, np.ndarray) else float(tempo)
         
         rms = librosa.feature.rms(y=y)
         energy = float(np.mean(rms))
@@ -248,7 +260,7 @@ def librosa_analysis_advanced(audio_path):
             'tempo_strength': round(tempo_strength_norm, 4),
         }
     except Exception as e:
-        print(f"    ❌ Lỗi Librosa: Không thể phân tích - {e}")
+        print(f"     Lỗi Librosa: Không thể phân tích - {e}")
         return None
 
 EMOTION_WEIGHTS = {
@@ -279,7 +291,9 @@ def analyze_lyrics_sentiment(track_name, artist_name):
     query = f"{track_name} {artist_name}"
     try:
         raw_lyrics = syncedlyrics.search(query, providers=["Lrclib", "NetEase", "MegLyrics"])
-        if not raw_lyrics: return default_result
+        if not raw_lyrics: 
+            print(f"    [~] Không tìm thấy lời bài hát cho: {track_name}")
+            return default_result
         
         clean_lyrics = re.sub(r'\[\d{2}:\d{2}\.\d{2}\]', '', raw_lyrics).strip()
         clean_lyrics = clean_lyrics[:2000]
@@ -293,13 +307,27 @@ def analyze_lyrics_sentiment(track_name, artist_name):
                 vn_sen = sentiment(clean_lyrics[:500])
                 if vn_sen == 'positive': vn_boost = 0.3
                 elif vn_sen == 'negative': vn_boost = -0.3
-            except: pass
+            except Exception as e:
+                pass  # Underthesea maybe not installed
         
         # --- BỘ PHÂN TÍCH TOÀN CẦU (HUGGINGFACE) - Lấy TOP 10 cảm xúc ---
-        translated_lyrics = GoogleTranslator(source='auto', target='en').translate(clean_lyrics)
+        try:
+            translated_lyrics = GoogleTranslator(source='auto', target='en').translate(clean_lyrics)
+        except Exception as e:
+            print(f"    [!] Lỗi dịch lyrics: {e}")
+            return default_result
         
-        raw_results = emotion_pipeline(translated_lyrics[:1500], top_k=10)
-        ai_results = raw_results[0] if isinstance(raw_results[0], list) else raw_results
+        try:
+            raw_results = emotion_pipeline(translated_lyrics[:1500], top_k=10)
+        except Exception as e:
+            print(f"    [!] Lỗi pipeline emotion: {e}")
+            return default_result
+        
+        # Handle different return formats
+        if isinstance(raw_results, list) and len(raw_results) > 0:
+            ai_results = raw_results[0] if isinstance(raw_results[0], list) else raw_results
+        else:
+            ai_results = []
         
         # Tính polarity tổng (giữ lại tương thích)
         polarity_score = 0.0
@@ -333,7 +361,7 @@ def analyze_lyrics_sentiment(track_name, artist_name):
 
 def mass_reprocess_kaggle():
     print("==================================================")
-    print("🔥 TOOL REPROCESS DỮ LIỆU KAGGLE (SPOTIFY API) ")
+    print(" TOOL REPROCESS DỮ LIỆU KAGGLE (SPOTIFY API) ")
     print("==================================================")
     
     kaggle_dir = r"data\kaggle data set"
@@ -342,15 +370,11 @@ def mass_reprocess_kaggle():
     # 1. NO SPOTIFY API NEEDED!
     # Lấy thông tin track name trực tiếp qua trang Web Embed công khai của Spotify 
     # Thay vì dùng API bị rate limit 429.
-    import requests
-    import json
-    from bs4 import BeautifulSoup
-    import random
     
     random.seed(42)
 
     if not os.path.exists(kaggle_dir):
-        print(f"❌ Không tìm thấy thư mục {kaggle_dir}")
+        print(f" Không tìm thấy thư mục {kaggle_dir}")
         return
 
     # Thu thập tất cả playlist_id từ các file csv lẻ
@@ -366,7 +390,7 @@ def mass_reprocess_kaggle():
                     playlist_ids.append((pid, label))
                 
     if not playlist_ids:
-        print("❌ Không tìm thấy dữ liệu playlist_id trong các file CSV.")
+        print(" Không tìm thấy dữ liệu playlist_id trong các file CSV.")
         return
         
     random.shuffle(playlist_ids) # Xử lý ngẫu nhiên để trộn data
@@ -379,7 +403,7 @@ def mass_reprocess_kaggle():
         for _, row in df_out.iterrows():
             song_key = f"{str(row['title']).strip().lower()} - {str(row['artists']).strip().lower()}"
             processed_songs.add(song_key)
-        print(f"✅ Tìm thấy {output_csv}, đã tải {len(processed_songs)} bài hát đã xử lý.")
+        print(f" Tìm thấy {output_csv}, đã tải {len(processed_songs)} bài hát đã xử lý.")
     else:
         df_empty = pd.DataFrame(columns=[
             'title', 'artists', 'spotify_popularity', 'release_year', 'artist_genres',
@@ -392,7 +416,7 @@ def mass_reprocess_kaggle():
         ])
         df_empty.to_csv(output_csv, index=False, encoding='utf-8-sig')
 
-    print(f"📚 Đã load danh sách {len(playlist_ids)} Playlist từ Kaggle. Bắt đầu thu thập Track ẩn danh...")
+    print(f" Đã load danh sách {len(playlist_ids)} Playlist từ Kaggle. Bắt đầu thu thập Track ẩn danh...")
     
     # Session có retry nhẹ để tránh lỗi mạng
     session = requests.Session()
@@ -403,9 +427,9 @@ def mass_reprocess_kaggle():
         try:
             percentage = (idx / total_playlists) * 100
             print(f"\n========================================================================")
-            print(f"⏳ TIẾN ĐỘ TỔNG THỂ: {percentage:.2f}% (Đang xử lý Playlist thứ {idx} / {total_playlists})")
+            print(f" TIẾN ĐỘ TỔNG THỂ: {percentage:.2f}% (Đang xử lý Playlist thứ {idx} / {total_playlists})")
             print(f"========================================================================")
-            print(f"🎧 Đang cào Web Track List cho Playlist ID: {pid} (MBTI: {mbti_label})")
+            print(f" Đang cào Web Track List cho Playlist ID: {pid} (MBTI: {mbti_label})")
             
             # Cào dữ liệu qua giao diện Web Nhúng (Embed), không dính API Limit!
             res = session.get(f"https://open.spotify.com/embed/playlist/{pid}", timeout=10)
@@ -424,7 +448,7 @@ def mass_reprocess_kaggle():
                 if not tracks_data:
                     continue
             except Exception as e:
-                print(f"⚠️ Lỗi cấu trúc JSON từ Playlist {pid}: {e}")
+                print(f" Lỗi cấu trúc JSON từ Playlist {pid}: {e}")
                 continue
                 
             # Trích xuất dạng Spotipy
@@ -449,7 +473,7 @@ def mass_reprocess_kaggle():
                 if song_key in processed_songs:
                     continue
                     
-                print(f"\n  🎵 Xử lý: {name} - {artists} (MBTI: {mbti_label})")
+                print(f"\n   Xử lý: {name} - {artists} (MBTI: {mbti_label})")
                 
                 meta_info = get_accurate_multi_genre(name, artists)
                 popularity = meta_info['popularity']
@@ -464,7 +488,7 @@ def mass_reprocess_kaggle():
                 audio_path = download_audio_segment(search_query)
                 
                 if not audio_path:
-                    print("    ❌ Không thể tải Audio")
+                    print("     Không thể tải Audio")
                     continue
             
                 # Librosa
@@ -512,13 +536,15 @@ def mass_reprocess_kaggle():
                     'mbti_label': mbti_label
                 }
                 
-                pd.DataFrame([new_row]).to_csv(output_csv, mode='a', header=not os.path.exists(output_csv), index=False, encoding='utf-8-sig')
+                # Append to CSV - only write header if file doesn't exist yet
+                file_exists = os.path.exists(output_csv)
+                pd.DataFrame([new_row]).to_csv(output_csv, mode='a', header=not file_exists, index=False, encoding='utf-8-sig')
                 processed_songs.add(song_key)
-                print(f"    ✅ DONE. Đã thêm Data vào {output_csv}.")
+                print(f"     DONE. Đã thêm Data vào {output_csv}.")
                 gc.collect()  # Giải phóng RAM sau mỗi bài
 
         except Exception as e:
-            print(f"⚠️ Lỗi xử lý playlist {pid}: {e}")
+            print(f" Lỗi xử lý playlist {pid}: {e}")
             import time
             time.sleep(5)
             continue

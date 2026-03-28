@@ -186,7 +186,10 @@ def get_accurate_multi_genre(clean_title, clean_artist, track_obj=None, sp=None)
                 # Lấy năm phát hành (Cắt 4 số đầu VD: "2015-10-23" -> "2015")
                 release_date = result.get('releaseDate', '')
                 if len(release_date) >= 4:
-                    release_year = int(release_date[:4])
+                    try:
+                        release_year = int(release_date[:4])
+                    except ValueError:
+                        release_year = 2020
                     
                 apple_genres = result.get('genres', [])
                 primary = result.get('primaryGenreName')
@@ -273,7 +276,7 @@ if not os.path.isfile(csv_filename):
 # Cú pháp: python spotify_process.py "6bDgXrDDmPA0koOx2lATUU"
 if len(sys.argv) > 1:
     playlist_id = sys.argv[1]
-    print(f"🌍 Nhận lệnh từ Web Server. ID Playlist: {playlist_id}")
+    print(f" Nhận lệnh từ Web Server. ID Playlist: {playlist_id}")
 else:
     # Nếu chạy test
     playlist_id = '17oywM1qzP88f7Man8Mpnp'
@@ -287,13 +290,13 @@ session.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)
 res = session.get(f"https://open.spotify.com/embed/playlist/{playlist_id}", timeout=10)
 
 if res.status_code != 200:
-    print("❌ Không thể cào Playlist Embed, thử check lại link hoặc kết nối mạng.")
+    print(" Không thể cào Playlist Embed, thử check lại link hoặc kết nối mạng.")
     sys.exit(1)
 
 soup = BeautifulSoup(res.text, 'html.parser')
 script = soup.find('script', id='__NEXT_DATA__')
 if not script:
-    print("❌ Không tìm thấy Track Data trong Embed HTML.")
+    print(" Không tìm thấy Track Data trong Embed HTML.")
     sys.exit(1)
 
 data = json.loads(script.string)
@@ -301,7 +304,7 @@ try:
     entity = data['props']['pageProps']['state']['data']['entity']
     tracks_data = entity.get('trackList', [])
 except Exception as e:
-    print(f"❌ Lỗi Data Json từ Spotify Embed: {e}")
+    print(f" Lỗi Data Json từ Spotify Embed: {e}")
     sys.exit(1)
 
 success_count = 0
@@ -425,5 +428,5 @@ for track in tracks_data:
         print("  -> Bỏ qua do không tải được audio.")
 
 print(f"\n=======================================================")
-print(f" 🚀 ĐÃ CÀO XONG PLAYLIST SPOTIFY! Tổng cộng lưu được {success_count} bài hát vào {csv_filename}")
+print(f"  ĐÃ CÀO XONG PLAYLIST SPOTIFY! Tổng cộng lưu được {success_count} bài hát vào {csv_filename}")
 print(f"=======================================================")

@@ -2,14 +2,22 @@ import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
 import pandas as pd
 import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Cấu hình API Spotify (Chỉ dùng để search tìm Link Playlist, không tải nhạc)
-CLIENT_ID = "349f78648a854a66ba2ad1eef7b849b9"
-CLIENT_SECRET = "e17ab759564c481a91a694edbb3be9d0"
+CLIENT_ID = os.getenv('SPOTIFY_CLIENT_ID')
+CLIENT_SECRET = os.getenv('SPOTIFY_CLIENT_SECRET')
+
+if not CLIENT_ID or not CLIENT_SECRET:
+    raise ValueError("Spotify credentials not found in .env file. Please add SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET.")
+
 try:
     sp = spotipy.Spotify(auth_manager=SpotifyClientCredentials(client_id=CLIENT_ID, client_secret=CLIENT_SECRET))
-except:
-    print("❌ Lỗi cấu hình Spotify API. API Key có thể đã hết hạn.")
+except Exception as e:
+    print(f" Lỗi cấu hình Spotify API: {e}")
     exit()
 
 MBTI_TYPES = [
@@ -29,7 +37,7 @@ SEARCH_QUERIES = [
 
 def farm_modern_playlists():
     print("==================================================")
-    print("🌐 TOOL SĂN LÙNG PLAYLIST MBTI THẾ HỆ MỚI (GEN Z)")
+    print(" TOOL SĂN LÙNG PLAYLIST MBTI THẾ HỆ MỚI (GEN Z)")
     print("==================================================")
     
     output_dir = r"data\kaggle data set"
@@ -38,7 +46,7 @@ def farm_modern_playlists():
     total_found = 0
     
     for mbti in MBTI_TYPES:
-        print(f"\n🔍 Đang giăng lưới tìm nhạc Mới cho: {mbti}...")
+        print(f"\n Đang giăng lưới tìm nhạc Mới cho: {mbti}...")
         playlist_ids = []
         
         for query_template in SEARCH_QUERIES:
@@ -50,9 +58,9 @@ def farm_modern_playlists():
                     for item in results['playlists']['items']:
                         if item and item.get('id'):
                             playlist_ids.append(item['id'])
-                            print(f"   ✅ Tóm được: {item['name'][:40]}... (ID: {item['id']})")
+                            print(f"    Tóm được: {item['name'][:40]}... (ID: {item['id']})")
             except Exception as e:
-                print(f"   ❌ Lỗi khi search '{query}': {e}")
+                print(f"    Lỗi khi search '{query}': {e}")
                 
         # Lọc bỏ các Playlist bị trùng lặp ID
         playlist_ids = list(set(playlist_ids))
@@ -65,10 +73,10 @@ def farm_modern_playlists():
             out_file = os.path.join(output_dir, f"modern_genz_{mbti}_df.csv")
             df.to_csv(out_file, index=False)
             total_found += len(playlist_ids)
-            print(f"💾 ĐÃ LƯU KHO BÁU: {len(playlist_ids)} Playlist cực cháy cho {mbti} vào mục Kaggle!")
+            print(f" ĐÃ LƯU KHO BÁU: {len(playlist_ids)} Playlist cực cháy cho {mbti} vào mục Kaggle!")
 
     print("\n==================================================")
-    print(f"🎉 HOÀN TẤT! GIĂNG LƯỚI ĐƯỢC TỔNG CỘNG: {total_found} PLAYLIST THẾ HỆ MỚI.")
+    print(f" HOÀN TẤT! GIĂNG LƯỚI ĐƯỢC TỔNG CỘNG: {total_found} PLAYLIST THẾ HỆ MỚI.")
     print("==================================================")
 
 if __name__ == "__main__":

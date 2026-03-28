@@ -14,9 +14,20 @@ import requests
 import urllib.parse
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+
+CLIENT_ID = os.getenv('SPOTIFY_CLIENT_ID')
+CLIENT_SECRET = os.getenv('SPOTIFY_CLIENT_SECRET')
+
+if not CLIENT_ID or not CLIENT_SECRET:
+    raise ValueError("Spotify credentials not found in .env file. Please add SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET.")
+
 sp = spotipy.Spotify(auth_manager=SpotifyOAuth(
-    client_id="349f78648a854a66ba2ad1eef7b849b9",
-    client_secret="e17ab759564c481a91a694edbb3be9d0", 
+    client_id=CLIENT_ID,
+    client_secret=CLIENT_SECRET, 
     redirect_uri="http://localhost:8888/callback",
     scope="playlist-read-private"
 ))
@@ -252,10 +263,10 @@ def analyze_audio(file_path):
 
 if len(sys.argv) > 1:
     youtube_playlist_url = sys.argv[1]
-    print(f"🌍 Nhận lệnh từ Web Server. URL Playlist: {youtube_playlist_url}")
+    print(f" Nhận lệnh từ Web Server. URL Playlist: {youtube_playlist_url}")
 else:
     youtube_playlist_url = 'https://youtube.com/playlist?list=PLrq2kujcEBFh9nh-FFzpYrOpslmQFMD_l&si=PU7Ky_yTd81egVtL' 
-    print("⚠️ Chú ý: Bạn đang chạy Test (Hardcoded URL).")
+    print(" Chú ý: Bạn đang chạy Test (Hardcoded URL).")
 
 videos = get_youtube_playlist(youtube_playlist_url)
 print(f"Đã tìm thấy {len(videos)} video trong playlist!")
@@ -300,11 +311,17 @@ for video in videos:
             info = ydl.extract_info(video_url, download=False)
             
             view_count = info.get('view_count', 0)
-            popularity = min(100, int(view_count / 1000000))
+            try:
+                popularity = min(100, int(view_count / 1000000))
+            except (ValueError, TypeError):
+                popularity = 0
             if popularity == 0 and view_count > 50000: popularity = 1 
             
             upload_date = info.get('upload_date', 'Unknown')
-            release_year = upload_date[:4] if upload_date != 'Unknown' else upload_date
+            try:
+                release_year = int(upload_date[:4]) if upload_date != 'Unknown' else 2020
+            except (ValueError, TypeError):
+                release_year = 2020
             
             # Lấy mảng thể loại & tính điểm
             genres_list = get_accurate_multi_genre(raw_title, info)
@@ -426,5 +443,5 @@ EMOTION_GROUPS = {
         print("  -> Bỏ qua do không tải được âm thanh từ playlist Youtube.")
 
 print(f"\n=======================================================")
-print(f" 🚀 ĐÃ CÀO XONG PLAYLIST! Tổng cộng lưu được {success_count} bài hát vào {csv_filename}")
+print(f"  ĐÃ CÀO XONG PLAYLIST! Tổng cộng lưu được {success_count} bài hát vào {csv_filename}")
 print(f"=======================================================")

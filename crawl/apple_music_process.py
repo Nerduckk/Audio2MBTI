@@ -14,6 +14,11 @@ import urllib.parse
 from bs4 import BeautifulSoup
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
+from dotenv import load_dotenv
+import random
+
+# Load environment variables from .env file
+load_dotenv()
 
 sys.stdout.reconfigure(encoding='utf-8')
 
@@ -37,12 +42,17 @@ t_genres = ['metal', 'techno', 'math rock', 'idm', 'dubstep', 'trance', 'instrum
 ALL_TRAINED_GENRES = e_genres + i_genres + s_genres + n_genres + f_genres + t_genres
 
 # Spotify dự phòng (Tối thiểu Key để tìm Thể Loại nếu Apple thiếu)
-CLIENT_ID = "349f78648a854a66ba2ad1eef7b849b9"
-CLIENT_SECRET = "e17ab759564c481a91a694edbb3be9d0"
+CLIENT_ID = os.getenv('SPOTIFY_CLIENT_ID')
+CLIENT_SECRET = os.getenv('SPOTIFY_CLIENT_SECRET')
+
+if not CLIENT_ID or not CLIENT_SECRET:
+    raise ValueError("Spotify credentials not found in .env file. Please add SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET.")
+
 try:
     auth_manager = SpotifyClientCredentials(client_id=CLIENT_ID, client_secret=CLIENT_SECRET)
     sp = spotipy.Spotify(auth_manager=auth_manager)
-except:
+except Exception as e:
+    print(f" Warning: Could not initialize Spotify client - {e}")
     sp = None
 
 def get_accurate_multi_genre(clean_title, clean_artist):
@@ -66,7 +76,10 @@ def get_accurate_multi_genre(clean_title, clean_artist):
                 # Cắt lấy năm 
                 release_date = result.get('releaseDate', '')
                 if len(release_date) >= 4:
-                    release_year = int(release_date[:4])
+                    try:
+                        release_year = int(release_date[:4])
+                    except ValueError:
+                        release_year = 2020
                     
                 apple_genres = result.get('genres', [])
                 primary = result.get('primaryGenreName')
@@ -117,7 +130,6 @@ def get_accurate_multi_genre(clean_title, clean_artist):
     if not found_genres: found_genres = ["pop"]
     
     # Fake Heuristic Popularity 
-    import random
     base_pop = random.randint(30, 60)
     if 'pop' in found_genres or 'dance' in found_genres: base_pop += random.randint(10, 30)
     if 'indie' in found_genres or 'lofi' in found_genres: base_pop -= random.randint(5, 15)
@@ -154,7 +166,7 @@ def calculate_genre_mbti_scores(found_genres):
 # 2. CÀO APPLE MUSIC WEB SCRAPPER (BYPASS API)
 # ==========================================
 def scrape_apple_music_playlist(url):
-    print(f"\n=> 🍏 Đang cào dữ liệu từ trang web Apple Music: {url}")
+    print(f"\n=>  Đang cào dữ liệu từ trang web Apple Music: {url}")
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
         'Accept-Language': 'en-US,en;q=0.9'
@@ -162,7 +174,7 @@ def scrape_apple_music_playlist(url):
     try:
         res = requests.get(url, headers=headers, timeout=10)
         if res.status_code != 200:
-            print("❌ Truy cập thất bại (Bị chặn hoặc Link sai).")
+            print(" Truy cập thất bại (Bị chặn hoặc Link sai).")
             return []
             
         # Tìm dữ liệu thông qua Regex (Tại vì Apple Music chèn Data vào Script)
@@ -184,7 +196,7 @@ def scrape_apple_music_playlist(url):
         unique_tracks = list(dict.fromkeys(tracks))
         return unique_tracks
     except Exception as e:
-        print(f"❌ Lỗi Scrape Apple HTML: {e}")
+        print(f" Lỗi Scrape Apple HTML: {e}")
         return []
 
 # ==========================================
@@ -343,7 +355,6 @@ if __name__ == "__main__":
         df_empty.to_csv(csv_filename, index=False, encoding='utf-8-sig')
 
     success_count = 0
-    import random
     
     # Để tránh tải rác ngầm quá lâu, ta chỉ Random xử lý 5 bài (hoặc tùy bạn chỉnh)
     random.shuffle(tracks)
