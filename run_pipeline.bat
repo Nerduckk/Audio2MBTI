@@ -1,10 +1,7 @@
 @echo off
 REM ============================================
 REM Audio2MBTI - Pipeline Automation
-REM Active flow:
-REM - Kaggle playlist crawl/reprocess
-REM - Recent release harvest from Spotify/YouTube/Apple Music seeds
-REM - quality check
+REM Runs Kaggle playlist processing only
 REM ============================================
 
 chdir /d d:\project
@@ -18,7 +15,7 @@ echo.
 
 REM Phase 1: Data Collection (only with real data)
 
-echo [1/3] Processing Kaggle Dataset...
+echo [1/2] Processing Kaggle Dataset...
 python crawl\kaggle_mbti_reprocessor.py
 if errorlevel 1 (
     echo.
@@ -27,16 +24,7 @@ if errorlevel 1 (
 )
 
 echo.
-echo [2/3] Harvesting Recent Releases...
-python crawl\recent_release_harvester.py --manifest config\recent_source_seeds.json --min-year 2024 --max-year 2026
-if errorlevel 1 (
-    echo.
-    echo ERROR: Recent release harvest failed
-    goto end
-)
-
-echo.
-echo [3/3] Quality Check...
+echo [2/2] Quality Check...
 python crawl\check_data_quality.py
 if errorlevel 1 (
     echo.

@@ -1,4 +1,4 @@
-"""Apple Music playlist and album crawler using public web page parsing."""
+"""Apple Music playlist crawler using public web page parsing."""
 
 from __future__ import annotations
 
@@ -23,18 +23,13 @@ def extract_apple_playlist_id(playlist_url: str) -> str | None:
     return match.group(1) if match else None
 
 
-def extract_apple_album_id(album_url: str) -> str | None:
-    match = re.search(r"/album/[^/]+/(\d+)", album_url)
-    return match.group(1) if match else None
-
-
 def _load_html(playlist_url: str) -> str:
     response = requests.get(playlist_url, timeout=20, headers=APPLE_HEADERS)
     response.raise_for_status()
     return response.text
 
 
-def _parse_collection_schema(html_text: str) -> Dict[str, Any]:
+def _parse_playlist_schema(html_text: str) -> Dict[str, Any]:
     soup = BeautifulSoup(html_text, "html.parser")
     for script in soup.find_all("script", attrs={"type": "application/ld+json"}):
         raw = script.string or script.get_text(strip=True)
@@ -44,9 +39,9 @@ def _parse_collection_schema(html_text: str) -> Dict[str, Any]:
             payload = json.loads(raw)
         except json.JSONDecodeError:
             continue
-        if isinstance(payload, dict) and payload.get("@type") in {"MusicPlaylist", "MusicAlbum"}:
+        if isinstance(payload, dict) and payload.get("@type") == "MusicPlaylist":
             return payload
-    raise ValueError("Could not locate Apple Music collection schema.")
+    raise ValueError("Could not locate Apple Music playlist schema.")
 
 
 def _parse_artist_names(html_text: str) -> List[str]:
@@ -59,7 +54,12 @@ def _parse_artist_names(html_text: str) -> List[str]:
     return artists
 
 
-def _normalize_tracks(raw_tracks: list[dict], artist_names: list[str]) -> list[dict]:
+def fetch_apple_music_playlist(playlist_url: str) -> Dict[str, Any]:
+    html_text = _load_html(playlist_url)
+    playlist_schema = _parse_playlist_schema(html_text)
+    artist_names = _parse_artist_names(html_text)
+
+    raw_tracks = playlist_schema.get("track", []) or []
     tracks = []
     for index, raw_track in enumerate(raw_tracks, start=1):
         if not isinstance(raw_track, dict):
@@ -82,15 +82,6 @@ def _normalize_tracks(raw_tracks: list[dict], artist_names: list[str]) -> list[d
                 "source_platform": "apple_music",
             }
         )
-    return tracks
-
-
-def fetch_apple_music_playlist(playlist_url: str) -> Dict[str, Any]:
-    html_text = _load_html(playlist_url)
-    playlist_schema = _parse_collection_schema(html_text)
-    artist_names = _parse_artist_names(html_text)
-    raw_tracks = playlist_schema.get("track", []) or playlist_schema.get("tracks", []) or []
-    tracks = _normalize_tracks(raw_tracks, artist_names)
 
     author = playlist_schema.get("author", {})
     owner = ""
@@ -99,7 +90,6 @@ def fetch_apple_music_playlist(playlist_url: str) -> Dict[str, Any]:
 
     return {
         "platform": "apple_music",
-        "kind": "playlist",
         "playlist_id": extract_apple_playlist_id(playlist_url),
         "playlist_url": playlist_url,
         "title": str(playlist_schema.get("name") or "").strip(),
@@ -110,40 +100,10 @@ def fetch_apple_music_playlist(playlist_url: str) -> Dict[str, Any]:
     }
 
 
-def fetch_apple_music_album(album_url: str) -> Dict[str, Any]:
-    html_text = _load_html(album_url)
-    album_schema = _parse_collection_schema(html_text)
-    artist_names = _parse_artist_names(html_text)
-    raw_tracks = album_schema.get("track", []) or album_schema.get("tracks", []) or []
-    tracks = _normalize_tracks(raw_tracks, artist_names)
-
-    by_artist = album_schema.get("byArtist", []) or []
-    owner = ""
-    if by_artist:
-        first_artist = by_artist[0]
-        if isinstance(first_artist, dict):
-            owner = str(first_artist.get("name") or "").strip()
-
-    return {
-        "platform": "apple_music",
-        "kind": "album",
-        "playlist_id": extract_apple_album_id(album_url),
-        "playlist_url": album_url,
-        "title": str(album_schema.get("name") or "").strip(),
-        "description": str(album_schema.get("description") or "").strip(),
-        "owner": owner,
-        "track_count": len(tracks),
-        "tracks": tracks,
-    }
-
-
 if __name__ == "__main__":
     import argparse
-    import json
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("url")
-    parser.add_argument("--kind", choices=["playlist", "album"], default="playlist")
+    parser.add_argument("playlist_url")
     args = parser.parse_args()
-    fetcher = fetch_apple_music_playlist if args.kind == "playlist" else fetch_apple_music_album
-    print(json.dumps(fetcher(args.url), ensure_ascii=False, indent=2))
+    print(json.dumps(fetch_apple_music_playlist(args.playlist_url), ensure_ascii=False, indent=2))

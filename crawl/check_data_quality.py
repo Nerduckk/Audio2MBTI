@@ -15,7 +15,7 @@ config = ConfigLoader.load()
 logger = get_logger(__name__)
 validator = DataValidator()
 
-def check_data_quality(csv_path):
+def check_data_quality(csv_path, fix_missing=False, output_path=None):
     logger.info("="*50)
     logger.info("Data Quality Audit Report")
     logger.info("="*50)
@@ -56,19 +56,22 @@ def check_data_quality(csv_path):
         for col, count in missing_cols.items():
             pct = (count / len(df)) * 100
             logger.warning(f"  - {col}: {count} rows ({pct:.1f}%)")
-        
-        for col in missing_cols.index:
-            if df[col].dtype in ['float64', 'int64']:
-                df[col] = df[col].fillna(df[col].mean())
-                logger.info(f"  ✓ {col} filled with mean")
+        if fix_missing:
+            for col in missing_cols.index:
+                if pd.api.types.is_numeric_dtype(df[col]):
+                    df[col] = df[col].fillna(df[col].mean())
+                logger.info(f"  OK {col} filled with mean")
             else:
                 df[col] = df[col].fillna("Unknown")
-                logger.info(f"  ✓ {col} filled with 'Unknown'")
-        
-        df.to_csv(csv_path, index=False, encoding='utf-8-sig')
-        logger.info("✓ File saved")
+                logger.info(f"  OK {col} filled with 'Unknown'")
+
+            target_path = output_path or csv_path
+            df.to_csv(target_path, index=False, encoding='utf-8-sig')
+            logger.info(f"OK Cleaned file saved to {target_path}")
+        else:
+            logger.info("Audit-only mode: source file left unchanged")
     else:
-        logger.info("✓ No missing values")
+        logger.info("OK No missing values")
 
     print("\n==================================================")
     print(f" KIỂM TOÁN HOÀN TẤT. DATA HIỆN TẠI SẴN SÀNG ĐỂ TRAINING: {len(df)} BÀI HÁT.")

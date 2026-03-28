@@ -1,26 +1,16 @@
-"""Shared audio, lyrics, and metadata processing helpers."""
+"""Shared audio and NLP processing helpers for crawlers."""
 
 from __future__ import annotations
 
 import os
 import re
-import math
-import urllib.parse
-import uuid
-from typing import Dict, List
+from typing import Dict
 
 import librosa
 import numpy as np
-import requests
 import syncedlyrics
-import yt_dlp
 from deep_translator import GoogleTranslator
 from transformers import pipeline
-
-try:
-    from .mbti_genre_processor import calculate_genre_mbti_scores, match_genre_to_mbti
-except ImportError:
-    from mbti_genre_processor import calculate_genre_mbti_scores, match_genre_to_mbti
 
 os.environ.setdefault("TF_ENABLE_ONEDNN_OPTS", "0")
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
@@ -70,130 +60,12 @@ EMOTION_GROUPS = {
 def get_emotion_pipeline():
     global _emotion_pipeline
     if _emotion_pipeline is None:
+        print("=> Loading HuggingFace emotion model...")
         _emotion_pipeline = pipeline(
             "text-classification",
             model="SamLowe/roberta-base-go_emotions",
         )
     return _emotion_pipeline
-
-
-def fetch_track_metadata(title: str, artists_text: str) -> Dict[str, object]:
-    found_genres: List[str] = []
-    release_year = 2020
-    popularity = 50
-
-    try:
-        search_query = urllib.parse.quote(f"{title} {artists_text}")
-        url = f"https://itunes.apple.com/search?term={search_query}&entity=song&limit=1"
-        response = requests.get(url, timeout=8)
-        response.raise_for_status()
-        data = response.json()
-        if data.get("resultCount", 0) > 0:
-            result = data["results"][0]
-            release_date = str(result.get("releaseDate") or "")
-            if len(release_date) >= 4 and release_date[:4].isdigit():
-                release_year = int(release_date[:4])
-
-            apple_genres = result.get("genres", []) or []
-            primary = result.get("primaryGenreName")
-            if primary and primary not in apple_genres:
-                apple_genres.append(primary)
-
-            for genre in apple_genres:
-                genre_name = ""
-                if isinstance(genre, dict):
-                    genre_name = str(genre.get("name") or "").lower()
-                elif isinstance(genre, str):
-                    genre_name = genre.lower()
-                if not genre_name or genre_name == "music":
-                    continue
-                matched = match_genre_to_mbti(genre_name)
-                if matched and matched not in found_genres:
-                    found_genres.append(matched)
-    except Exception:
-        pass
-
-    if not found_genres:
-        found_genres = ["pop"]
-
-    popularity = estimate_youtube_popularity(title, artists_text)
-
-    scores = calculate_genre_mbti_scores(found_genres)
-    return {
-        "artist_genres": ", ".join(found_genres).upper(),
-        "genre_ei_score": scores["genre_ei"],
-        "genre_sn_score": scores["genre_sn"],
-        "genre_tf_score": scores["genre_tf"],
-        "release_year": release_year,
-        "popularity_proxy": popularity,
-        "genres_list": found_genres,
-    }
-
-
-def estimate_youtube_popularity(title: str, artists_text: str) -> int:
-    query = f"{title} {artists_text} audio"
-    ydl_opts = {
-        "quiet": True,
-        "no_warnings": True,
-        "skip_download": True,
-        "default_search": "ytsearch",
-        "extract_flat": False,
-        "noplaylist": True,
-        "socket_timeout": 10,
-        "js_runtimes": {"node": {}},
-    }
-
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(f"ytsearch1:{query}", download=False)
-        entries = info.get("entries", []) or []
-        if not entries:
-            return 50
-        top_entry = entries[0] or {}
-        views = int(top_entry.get("view_count") or 0)
-        if views <= 0:
-            return 50
-        scaled = int(round(min(100, max(1, (math.log10(views + 1) - 3) * 15))))
-        return scaled
-    except Exception:
-        return 50
-
-
-def download_audio_segment(query: str, duration: int = 35, output_basename: str | None = None) -> str | None:
-    output_basename = output_basename or f"temp_audio_{uuid.uuid4().hex}"
-    audio_path = f"{output_basename}.mp3"
-    for candidate in [output_basename, audio_path, f"{output_basename}.webm", f"{output_basename}.m4a"]:
-        if os.path.exists(candidate):
-            try:
-                os.remove(candidate)
-            except OSError:
-                pass
-
-    ydl_opts = {
-        "format": "bestaudio/best",
-        "outtmpl": output_basename,
-        "quiet": True,
-        "no_warnings": True,
-        "extract_audio": True,
-        "audio_format": "mp3",
-        "ffmpeg_location": r"d:\project\ffmpeg-master-latest-win64-gpl\bin",
-        "default_search": "ytsearch",
-        "download_ranges": lambda _, __: [{"start_time": 0, "end_time": duration}],
-        "postprocessors": [
-            {
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "mp3",
-                "preferredquality": "192",
-            }
-        ],
-    }
-
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([f"ytsearch1:{query}"])
-        return audio_path if os.path.exists(audio_path) else None
-    except Exception:
-        return None
 
 
 def analyze_audio_features(audio_path: str, duration: int = 35) -> Dict[str, float] | None:
@@ -202,27 +74,42 @@ def analyze_audio_features(audio_path: str, duration: int = 35) -> Dict[str, flo
 
         tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
         tempo = float(np.mean(tempo)) if isinstance(tempo, np.ndarray) else float(tempo)
+
         rms = librosa.feature.rms(y=y)
+        energy = min(float(np.mean(rms)) / 0.3, 1.0)
+
         onset_env = librosa.onset.onset_strength(y=y, sr=sr)
+        danceability = min(float(np.var(onset_env)) / 10.0, 1.0)
+
+        spectral_centroid = float(np.mean(librosa.feature.spectral_centroid(y=y, sr=sr)))
+        spectral_flatness = float(np.mean(librosa.feature.spectral_flatness(y=y)))
+        zero_crossing_rate = float(np.mean(librosa.feature.zero_crossing_rate(y=y)))
+        spectral_bandwidth = min(
+            1.0, float(np.mean(librosa.feature.spectral_bandwidth(y=y, sr=sr))) / 4000.0
+        )
+        spectral_rolloff = min(
+            1.0, float(np.mean(librosa.feature.spectral_rolloff(y=y, sr=sr))) / 8000.0
+        )
+        mfcc_mean = float(np.mean(librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13)))
+        chroma_mean = float(np.mean(librosa.feature.chroma_stft(y=y, sr=sr)))
+        tempo_strength = float(np.max(onset_env)) if len(onset_env) > 0 else 0.0
+        tempo_strength = min(1.0, tempo_strength / 5.0)
 
         return {
             "tempo_bpm": round(tempo, 2),
-            "energy": round(min(float(np.mean(rms)) / 0.3, 1.0), 4),
-            "danceability": round(min(float(np.var(onset_env)) / 10.0, 1.0), 4),
-            "spectral_centroid": round(float(np.mean(librosa.feature.spectral_centroid(y=y, sr=sr))), 1),
-            "spectral_flatness": round(float(np.mean(librosa.feature.spectral_flatness(y=y))), 4),
-            "zero_crossing_rate": round(float(np.mean(librosa.feature.zero_crossing_rate(y=y))), 4),
-            "spectral_bandwidth": round(
-                min(1.0, float(np.mean(librosa.feature.spectral_bandwidth(y=y, sr=sr))) / 4000.0), 4
-            ),
-            "spectral_rolloff": round(
-                min(1.0, float(np.mean(librosa.feature.spectral_rolloff(y=y, sr=sr))) / 8000.0), 4
-            ),
-            "mfcc_mean": round(float(np.mean(librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13))), 4),
-            "chroma_mean": round(float(np.mean(librosa.feature.chroma_stft(y=y, sr=sr))), 4),
-            "tempo_strength": round(min(1.0, (float(np.max(onset_env)) if len(onset_env) else 0.0) / 5.0), 4),
+            "energy": round(energy, 4),
+            "danceability": round(danceability, 4),
+            "spectral_centroid": round(spectral_centroid, 1),
+            "spectral_flatness": round(spectral_flatness, 4),
+            "zero_crossing_rate": round(zero_crossing_rate, 4),
+            "spectral_bandwidth": round(spectral_bandwidth, 4),
+            "spectral_rolloff": round(spectral_rolloff, 4),
+            "mfcc_mean": round(mfcc_mean, 4),
+            "chroma_mean": round(chroma_mean, 4),
+            "tempo_strength": round(tempo_strength, 4),
         }
-    except Exception:
+    except Exception as exc:
+        print(f"     Audio analysis failed: {exc}")
         return None
 
 
@@ -250,11 +137,11 @@ def analyze_lyrics_sentiment(track_name: str, artist_name: str) -> Dict[str, flo
         ai_results = raw_results[0] if isinstance(raw_results[0], list) else raw_results
 
         polarity_score = 0.0
-        for item in ai_results:
-            if not isinstance(item, dict) or "label" not in item:
+        for res in ai_results:
+            if not isinstance(res, dict) or "label" not in res:
                 continue
-            label = item["label"].lower()
-            score = float(item["score"])
+            label = res["label"].lower()
+            score = float(res["score"])
             polarity_score += EMOTION_WEIGHTS.get(label, 0.0) * score
             for group_name, labels in EMOTION_GROUPS.items():
                 if label in labels:
@@ -264,5 +151,6 @@ def analyze_lyrics_sentiment(track_name: str, artist_name: str) -> Dict[str, flo
         for key in list(EMOTION_GROUPS):
             result[key] = round(result[key], 4)
         return result
-    except Exception:
+    except Exception as exc:
+        print(f"     Lyrics analysis failed: {exc}")
         return result

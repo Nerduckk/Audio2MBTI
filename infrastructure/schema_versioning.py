@@ -45,28 +45,14 @@ class SchemaVersionControl:
     """Manages schema versions and migrations"""
     
     # Current schema version
-    CURRENT_VERSION = "2.0"
+    CURRENT_VERSION = "1.0"
     
     # Schema versions history
     SCHEMAS = {
         "1.0": SchemaVersion(
             "1.0",
             [
-                "title", "artists", "album", "release_date", "genre",
-                "tempo", "tempo_strength", "energy", "danceability", "valence",
-                "acousticness", "instrumentalness", "liveness", "speechiness", "loudness",
-                "zero_crossing_rate", "spectral_bandwidth", "spectral_centroid",
-                "mfcc_mean", "mfcc_std",
-                "lyrics", "lyrics_wordcount", "lyrics_polarity",
-                "emotion_class", "emotion_confidence",
-                "genre_ei", "genre_sn", "genre_tf", "mbti_label"
-            ],
-            "Initial schema with audio features, lyrics sentiment, and MBTI labels"
-        ),
-        "2.0": SchemaVersion(
-            "2.0",
-            [
-                "title", "artists", "popularity_proxy", "release_year", "artist_genres",
+                "title", "artists", "spotify_popularity", "release_year", "artist_genres",
                 "genre_ei_score", "genre_sn_score", "genre_tf_score",
                 "tempo_bpm", "energy", "danceability", "spectral_centroid",
                 "spectral_flatness", "zero_crossing_rate", "spectral_bandwidth",
@@ -74,7 +60,7 @@ class SchemaVersionControl:
                 "lyrics_polarity", "lyrics_joy", "lyrics_sadness",
                 "lyrics_anger", "lyrics_love", "lyrics_fear", "mbti_label"
             ],
-            "Real-track schema with popularity proxy from log-scaled YouTube views"
+            "Current training schema with shared audio, lyrics sentiment, and MBTI labels"
         )
     }
     
