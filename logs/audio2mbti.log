@@ -7,3 +7,17 @@
 2026-03-29 01:45:19,607 - __main__ - INFO - ==================================================
 2026-03-29 01:45:19,615 - __main__ - INFO - Total rows: 114 songs
 2026-03-29 01:45:19,627 - __main__ - INFO - Checking missing values...
+2026-03-29 01:58:35,401 - infrastructure.parallel_processor - INFO - Parallel processor initialized: 4 workers, multiprocessing=False, chunk_size=2
+2026-03-29 01:59:42,400 - infrastructure.batch_processor - INFO - Batch saved: 10 records to D:\project\data\mbti_master_training_data.csv (Total: 10/10)
+2026-03-29 01:59:49,519 - infrastructure.parallel_processor - INFO - Parallel processor initialized: 4 workers, multiprocessing=False, chunk_size=2
+2026-03-29 02:03:04,444 - __main__ - INFO - ==================================================
+2026-03-29 02:03:04,445 - __main__ - INFO - Starting data aggregation - combining all sources
+2026-03-29 02:03:04,445 - __main__ - INFO - ==================================================
+2026-03-29 02:03:04,449 - __main__ - ERROR - No data to aggregate!
+2026-03-29 02:03:17,398 - __main__ - INFO - ==================================================
+2026-03-29 02:03:17,398 - __main__ - INFO - Data Quality Audit Report
+2026-03-29 02:03:17,398 - __main__ - INFO - ==================================================
+2026-03-29 02:03:17,404 - __main__ - INFO - Total rows: 171 songs
+2026-03-29 02:03:17,418 - __main__ - INFO - Checking missing values...
+2026-03-29 02:07:27,133 - infrastructure.parallel_processor - INFO - Parallel processor initialized: 4 workers, multiprocessing=False, chunk_size=2
+2026-03-29 02:08:19,062 - infrastructure.batch_processor - INFO - Batch saved: 10 records to d:\project\data\mbti_master_training_data.csv (Total: 10/10)

@@ -30,6 +30,12 @@ from mbti_genre_processor import (
 )
 from file_paths import get_master_csv_path, ensure_data_dir_exists
 
+# Import infrastructure tools
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from infrastructure.batch_processor import BatchProcessor
+from infrastructure.parallel_processor import ParallelProcessor
+from infrastructure.retry_logic import retry_with_backoff, RateLimiter
+
 # Load environment variables from .env file
 load_dotenv()
 
@@ -170,6 +176,9 @@ def get_spotify_client():
 
 # Khởi tạo sp
 sp = get_spotify_client()
+
+# Rate limiter cho Spotify API
+spotify_rate_limiter = RateLimiter(requests_per_second=2.0)
 
 def download_audio_segment(query, duration=35):
     audio_path = "temp_audio.mp3"
@@ -360,6 +369,109 @@ def analyze_lyrics_sentiment(track_name, artist_name):
     except Exception:
         return default_result
 
+def process_track_with_all_features(track_info, batch_processor, session):
+    """
+    Wrapper function to process a single track with all features.
+    Designed for parallel processing. Uses RetryLogic for API calls.
+    
+    Args:
+        track_info: dict with 'name', 'artists', 'mbti_label', 'processed_songs'
+        batch_processor: BatchProcessor instance for efficient CSV writing
+        session: requests.Session for web scraping
+    
+    Returns:
+        dict with processed data or None if processing failed
+    """
+    name = track_info.get('name', '').strip()
+    artists = track_info.get('artists', '').replace("\xa0", " ").strip()
+    mbti_label = track_info.get('mbti_label', '')
+    processed_songs = track_info.get('processed_songs', set())
+    
+    if not name or not artists:
+        return None
+    
+    song_key = f"{name.lower()} - {artists.lower()}"
+    
+    if song_key in processed_songs:
+        return None
+    
+    try:
+        print(f"   Xử lý: {name} - {artists} (MBTI: {mbti_label})")
+        
+        # Get genre info with retry logic
+        meta_info = get_accurate_multi_genre(name, artists, sp=sp)
+        popularity = meta_info['popularity']
+        release_year = meta_info['year']
+        genres_list = meta_info['genres']
+        
+        genres_str = ", ".join(genres_list).upper()
+        genre_scores = calculate_genre_mbti_scores(genres_list)
+        
+        # Download audio segment
+        search_query = f"{name} {artists} audio"
+        audio_path = download_audio_segment(search_query)
+        
+        if not audio_path:
+            print("     Không thể tải Audio")
+            return None
+        
+        # Librosa analysis
+        print("    [~] Đang phân tích sóng âm (Librosa)...")
+        features = librosa_analysis_advanced(audio_path)
+        
+        # Clean up audio file
+        if os.path.exists(audio_path):
+            os.remove(audio_path)
+        
+        if not features:
+            return None
+        
+        # Lyrics NLP analysis
+        print("    [~] Đang đọc lời bài hát (NLP)...")
+        nlp_result = analyze_lyrics_sentiment(name, artists)
+        
+        # Create record
+        new_row = {
+            'title': name,
+            'artists': artists,
+            'spotify_popularity': popularity,
+            'release_year': release_year,
+            'artist_genres': genres_str,
+            'genre_ei_score': genre_scores['genre_ei'],
+            'genre_sn_score': genre_scores['genre_sn'],
+            'genre_tf_score': genre_scores['genre_tf'],
+            'tempo_bpm': features['tempo'],
+            'energy': features['energy'],
+            'danceability': features['danceability'],
+            'spectral_centroid': features['spectral_centroid'],
+            'spectral_flatness': features['spectral_flatness'],
+            'zero_crossing_rate': features['zero_crossing_rate'],
+            'spectral_bandwidth': features['spectral_bandwidth'],
+            'spectral_rolloff': features['spectral_rolloff'],
+            'mfcc_mean': features['mfcc_mean'],
+            'chroma_mean': features['chroma_mean'],
+            'tempo_strength': features['tempo_strength'],
+            'lyrics_polarity': nlp_result['lyrics_polarity'],
+            'lyrics_joy': nlp_result['lyrics_joy'],
+            'lyrics_sadness': nlp_result['lyrics_sadness'],
+            'lyrics_anger': nlp_result['lyrics_anger'],
+            'lyrics_love': nlp_result['lyrics_love'],
+            'lyrics_fear': nlp_result['lyrics_fear'],
+            'mbti_label': mbti_label
+        }
+        
+        # Add to batch (will auto-flush when batch reaches size)
+        batch_processor.add(new_row)
+        processed_songs.add(song_key)
+        print(f"     ✓ Đã thêm vào batch processor.")
+        
+        gc.collect()  # Clean up memory after processing
+        return new_row
+        
+    except Exception as e:
+        print(f"     [!] Lỗi xử lý track: {e}")
+        return None
+
 def mass_reprocess_kaggle():
     print("==================================================")
     print(" TOOL REPROCESS DỮ LIỆU KAGGLE (SPOTIFY API) ")
@@ -371,9 +483,8 @@ def mass_reprocess_kaggle():
     ensure_data_dir_exists()
     output_csv = get_master_csv_path()
     
-    # 1. NO SPOTIFY API NEEDED!
-    # Lấy thông tin track name trực tiếp qua trang Web Embed công khai của Spotify 
-    # Thay vì dùng API bị rate limit 429.
+    # Initialize BatchProcessor for efficient CSV writing
+    batch_processor = BatchProcessor(batch_size=10, output_file=output_csv)
     
     random.seed(42)
 
@@ -399,7 +510,6 @@ def mass_reprocess_kaggle():
         
     random.shuffle(playlist_ids) # Xử lý ngẫu nhiên để trộn data
     
-    processed_songs = set()
     processed_songs = set()
     if os.path.exists(output_csv) and os.path.getsize(output_csv) > 20: 
         try:
@@ -432,6 +542,9 @@ def mass_reprocess_kaggle():
     # Session có retry nhẹ để tránh lỗi mạng
     session = requests.Session()
     session.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
+    
+    # Initialize ParallelProcessor for concurrent track processing
+    parallel_processor = ParallelProcessor(num_workers=4, use_multiprocessing=False, chunk_size=2)
     
     total_playlists = len(playlist_ids)
     for idx, (pid, mbti_label) in enumerate(playlist_ids, 1):
@@ -468,98 +581,32 @@ def mass_reprocess_kaggle():
                 tracks.append({
                     'name': t.get('title', ''),
                     'artists': t.get('subtitle', ''),
+                    'mbti_label': mbti_label,
+                    'processed_songs': processed_songs
                 })
             
-            # Lấy toàn bộ bài hát trong Playlist (Không giới hạn 5 bài nữa)
+            # Xử lý tất cả tracks trong playlist song song
+            if tracks:
+                def process_track_wrapper(track_info):
+                    return process_track_with_all_features(
+                        track_info, batch_processor, session
+                    )
                 
-            for track_item in tracks:
-                name = track_item.get('name', '').strip()
-                artists = track_item.get('artists', '').replace("\xa0", " ").strip() # Dọn rác unicode space
+                # Xử lý song song - ThreadPoolExecutor được dùng để tránh GIL issues với librosa
+                results = parallel_processor.map(process_track_wrapper, tracks)
                 
-                if not name or not artists:
-                    continue
-                    
-                song_key = f"{name.lower()} - {artists.lower()}"
+                # Lọc kết quả hợp lệ
+                valid_results = [r for r in results if r is not None]
+                print(f"     ✓ Xử lý xong {len(valid_results)}/{len(tracks)} tracks từ playlist.")
                 
-                if song_key in processed_songs:
-                    continue
-                    
-                print(f"\n   Xử lý: {name} - {artists} (MBTI: {mbti_label})")
-                
-                meta_info = get_accurate_multi_genre(name, artists)
-                popularity = meta_info['popularity']
-                release_year = meta_info['year']
-                genres_list = meta_info['genres']
-                
-                genres_str = ", ".join(genres_list).upper()
-                genre_scores = calculate_genre_mbti_scores(genres_list)
-                
-                # YouTube Downloader
-                search_query = f"{name} {artists} audio"
-                audio_path = download_audio_segment(search_query)
-                
-                if not audio_path:
-                    print("     Không thể tải Audio")
-                    continue
-            
-                # Librosa
-                print("    [~] Đang phân tích sóng âm (Librosa)...")
-                features = librosa_analysis_advanced(audio_path)
-                
-                # Xoá file audio lẹ cho nhẹ máy
-                if os.path.exists(audio_path):
-                    os.remove(audio_path)
-                    
-                if not features:
-                    continue
-                    
-                # Lyrics NLP
-                print("    [~] Đang đọc lời bài hát (NLP)...")
-                nlp_result = analyze_lyrics_sentiment(name, artists)
-                
-                # Lưu
-                new_row = {
-                    'title': name,
-                    'artists': artists,
-                    'spotify_popularity': popularity,
-                    'release_year': release_year,
-                    'artist_genres': genres_str,
-                    'genre_ei_score': genre_scores['genre_ei'],
-                    'genre_sn_score': genre_scores['genre_sn'],
-                    'genre_tf_score': genre_scores['genre_tf'],
-                    'tempo_bpm': features['tempo'],
-                    'energy': features['energy'],
-                    'danceability': features['danceability'],
-                    'spectral_centroid': features['spectral_centroid'],
-                    'spectral_flatness': features['spectral_flatness'],
-                    'zero_crossing_rate': features['zero_crossing_rate'],
-                    'spectral_bandwidth': features['spectral_bandwidth'],
-                    'spectral_rolloff': features['spectral_rolloff'],
-                    'mfcc_mean': features['mfcc_mean'],
-                    'chroma_mean': features['chroma_mean'],
-                    'tempo_strength': features['tempo_strength'],
-                    'lyrics_polarity': nlp_result['lyrics_polarity'],
-                    'lyrics_joy': nlp_result['lyrics_joy'],
-                    'lyrics_sadness': nlp_result['lyrics_sadness'],
-                    'lyrics_anger': nlp_result['lyrics_anger'],
-                    'lyrics_love': nlp_result['lyrics_love'],
-                    'lyrics_fear': nlp_result['lyrics_fear'],
-                    'mbti_label': mbti_label
-                }
-                
-                # Append to CSV - write header only if file is actually empty or missing
-                file_exists = os.path.exists(output_csv)
-                write_header = not file_exists or os.path.getsize(output_csv) < 10
-                pd.DataFrame([new_row]).to_csv(output_csv, mode='a', header=write_header, index=False, encoding='utf-8-sig')
-                processed_songs.add(song_key)
-                print(f"     DONE. Đã thêm Data vào {output_csv}.")
-                gc.collect()  # Giải phóng RAM sau mỗi bài
-
         except Exception as e:
             print(f" Lỗi xử lý playlist {pid}: {e}")
-            import time
             time.sleep(5)
             continue
+    
+    # Flush remaining records in batch processor
+    batch_processor.flush()
+    print(f"\n✓ Hoàn thành! Tổng cộng {batch_processor.total_saved} tracks được lưu vào {output_csv}")
 
 if __name__ == "__main__":
     mass_reprocess_kaggle()
