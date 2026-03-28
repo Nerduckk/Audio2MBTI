@@ -121,8 +121,9 @@ validation:
   required_columns:
     - "title"
     - "artists"
-    - "genre"
-    - "tempo"
+    - "popularity_proxy"
+    - "artist_genres"
+    - "tempo_bpm"
     - "lyrics_polarity"
     - "mbti_label"
 

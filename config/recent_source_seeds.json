@@ -1,0 +1,23 @@
+[
+  {
+    "enabled": true,
+    "platform": "spotify",
+    "kind": "album",
+    "mbti_label": "INTP",
+    "url": "https://open.spotify.com/album/4aawyAB9vmqN3uQ7FjRGTy"
+  },
+  {
+    "enabled": true,
+    "platform": "apple_music",
+    "kind": "album",
+    "mbti_label": "INFJ",
+    "url": "https://music.apple.com/us/album/after-hours/1499378108"
+  },
+  {
+    "enabled": false,
+    "platform": "youtube",
+    "kind": "playlist",
+    "mbti_label": "ENFP",
+    "url": "https://www.youtube.com/playlist?list=PLMC9KNkIncKtPzgY-5rmhvj7fax8fdxoj"
+  }
+]

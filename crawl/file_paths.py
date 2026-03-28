@@ -1,7 +1,4 @@
-"""
-File paths utility for Audio2MBTI crawlers
-Centralizes CSV file path configuration from config.yaml
-"""
+"""File path helpers for the active real-song pipeline."""
 
 import os
 from pathlib import Path
@@ -24,15 +21,7 @@ def get_data_dir():
 
 
 def get_csv_path(csv_key):
-    """
-    Get full path to a CSV file from config
-    
-    Args:
-        csv_key: Key in config.crawlers (e.g. 'kaggle_csv', 'spotify_csv')
-        
-    Returns:
-        Absolute path to CSV file
-    """
+    """Get full path to a configured crawler CSV output."""
     data_dir = get_data_dir()
     
     crawler_config = config.get('crawlers', {})
@@ -52,41 +41,11 @@ def get_master_csv_path():
 
 
 def get_kaggle_csv():
-    """Get path for Kaggle crawler output CSV"""
+    """Get path for Kaggle crawler output CSV."""
     return get_csv_path('kaggle_csv')
 
-
-def get_spotify_csv():
-    """Get path for Spotify crawler output CSV"""
-    return get_csv_path('spotify_csv')
-
-
-def get_youtube_csv():
-    """Get path for YouTube crawler output CSV"""
-    return get_csv_path('youtube_csv')
-
-
-def get_applemusic_csv():
-    """Get path for Apple Music crawler output CSV"""
-    return get_csv_path('applemusic_csv')
-
-
-def get_survey_csv():
-    """Get path for survey data CSV"""
-    return get_csv_path('survey_csv')
-
-
-def get_merge_sources():
-    """Get list of CSV files to merge for master database"""
-    data_dir = get_data_dir()
-    crawler_config = config.get('crawlers', {})
-    sources = crawler_config.get('merge_sources', [])
-    
-    return [os.path.join(data_dir, source) for source in sources]
-
-
 def ensure_data_dir_exists():
-    """Create data directory if it doesn't exist"""
+    """Create data directory if it doesn't exist."""
     data_dir = get_data_dir()
     os.makedirs(data_dir, exist_ok=True)
     return data_dir
