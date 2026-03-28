@@ -9,7 +9,7 @@ from functools import wraps
 from typing import Callable, Any, Optional, Tuple
 import requests
 from requests.exceptions import RequestException, Timeout, ConnectionError
-from config_loader import ConfigLoader, get_logger
+from .config_loader import ConfigLoader, get_logger
 
 logger = get_logger(__name__)
 

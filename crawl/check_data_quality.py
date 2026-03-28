@@ -7,6 +7,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from infrastructure.config_loader import ConfigLoader, get_logger
 from infrastructure.data_validator import DataValidator
+from file_paths import get_master_csv_path
 
 sys.stdout.reconfigure(encoding='utf-8')
 
@@ -74,4 +75,6 @@ def check_data_quality(csv_path):
     print("==================================================")
 
 if __name__ == "__main__":
-    check_data_quality(r"data\mbti_database_kaggle_reprocessed.csv")
+    # Use config-driven path instead of hard-coded
+    master_csv = get_master_csv_path()
+    check_data_quality(master_csv)

@@ -34,6 +34,20 @@ data:
   validation_enabled: true
   quality_metrics_enabled: true
 
+# Crawler Output Configuration
+crawlers:
+  kaggle_csv: "mbti_database_kaggle_reprocessed.csv"
+  spotify_csv: "mbti_database_spotify.csv"
+  youtube_csv: "mbti_database_youtube.csv"
+  applemusic_csv: "mbti_database_applemusic.csv"
+  survey_csv: "mbti_database_survey.csv"
+  # Files to merge for master database
+  merge_sources:
+    - "mbti_database_kaggle_reprocessed.csv"
+    - "mbti_database_spotify.csv"
+    - "mbti_database_youtube.csv"
+    - "mbti_database_applemusic.csv"
+
 # Audio Analysis Configuration
 audio:
   sample_rate: 22050

@@ -8,7 +8,7 @@ import numpy as np
 from typing import Dict, List, Tuple, Any, Optional
 from datetime import datetime
 import json
-from config_loader import ConfigLoader, get_logger
+from .config_loader import ConfigLoader, get_logger
 
 logger = get_logger(__name__)
 

@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import os
 import sys
 import time
@@ -19,6 +20,15 @@ from bs4 import BeautifulSoup
 import json
 import random
 from dotenv import load_dotenv
+from pathlib import Path
+
+# Import shared genre processor
+sys.path.insert(0, str(Path(__file__).parent))
+from mbti_genre_processor import (
+    calculate_genre_mbti_scores, normalize_genre, match_genre_to_mbti,
+    ALL_TRAINED_GENRES
+)
+from file_paths import get_master_csv_path, ensure_data_dir_exists
 
 # Load environment variables from .env file
 load_dotenv()
@@ -39,114 +49,8 @@ print("=> Đang khởi động Mô Hình AI HuggingFace cho NLP (go_emotions)...
 emotion_pipeline = pipeline("text-classification", model="SamLowe/roberta-base-go_emotions")
 
 # ==========================================
-# 1. BỘ TỪ KHÓA THỂ LOẠI (GENRE) CHUẨN TỪ MODEL MBTI CỦA BẠN
+# Data Processing Begins
 # ==========================================
-# Extended with aliases for better matching
-e_genres = ['pop', 'dance', 'edm', 'electronic', 'hip hop', 'hiphop', 'rap', 'house', 'deep house', 
-            'future bass', 'latin', 'trap', 'club', 'party', 'k-pop', 'kpop', 'reggaeton', 'upbeat', 
-            'exercize', 'workout', 'disco', 'funky', 'funk']
-i_genres = ['lofi', 'lo-fi', 'lo fi', 'indie', 'indie pop', 'indie rock', 'acoustic', 'jazz', 'classical', 
-            'ambient', 'chill', 'chillhop', 'chillwave', 'folk', 'folkish', 'sleep', 'bedroom pop', 
-            'rnb', 'alternative r&b', 'quiet', 'slow', 'meditative', 'peaceful']
-s_genres = ['v-pop', 'vpop', 'country', 'r&b', 'rnb', 'mainstream', 'pop rock', 'adult standards', 
-            'schlager', 'bolero', 'easy listening', 'standard', 'singer-songwriter']
-n_genres = ['experimental', 'psychedelic', 'synthwave', 'synthpop', 'shoegaze', 'avant-garde', 
-            'cyberpunk', 'post-rock', 'progressive', 'prog', 'electronic experimental', 'glitch',
-            'vaporwave', 'future funk', 'art rock', 'complex']
-f_genres = ['soul', 'blues', 'emo', 'emotional', 'ballad', 'romantic', 'vocal', 'acapella',
-            'gospel', 'singer-songwriter', 'love songs', 'sad', 'sad songs', 'heartbreak']
-t_genres = ['metal', 'metalcore', 'deathcore', 'hardcore', 'techno', 'tech house', 'math rock', 
-            'idm', 'intelligent dance', 'dubstep', 'bass', 'trance', 'instrumental', 'hardstyle',
-            'drum and bass', 'dnb', 'breakcore']
-
-ALL_TRAINED_GENRES = e_genres + i_genres + s_genres + n_genres + f_genres + t_genres
-
-def normalize_genre(g):
-    """Normalize genre string for better matching"""
-    g = g.lower().strip()
-    # Replace common variations
-    replacements = {
-        'alternative': 'indie',
-        'electronic dance': 'edm',
-        'indie pop': 'indie',
-        'indie rock': 'indie',
-        'r&b': 'rnb',
-        'rhythm and blues': 'rnb',
-        'hip-hop': 'hip hop',
-        'hip hop/rap': 'hip hop',
-        'singer/songwriter': 'singer-songwriter',
-        'k-pop': 'kpop',
-        'k pop': 'kpop',
-        'lo-fi': 'lofi',
-        'chill hop': 'chillhop'
-    }
-    for key, val in replacements.items():
-        if key in g:
-            g = g.replace(key, val)
-    return g
-
-def calculate_genre_mbti_scores(found_genres):
-    """
-    Calculate MBTI-style genre preferences.
-    Key insight: Genres alone can't capture mixed preferences - that's why we also use
-    audio features (energy, tempo, danceability) to disambiguate.
-    
-    Example:
-    - indie-pop song: genres say balanced E/I
-    - BUT: if energy is VERY HIGH + danceability HIGH → lean towards E
-    - if energy is LOW + tempo SLOW → lean towards I
-    """
-    counts = {'e': 0, 'i': 0, 's': 0, 'n': 0, 't': 0, 'f': 0}
-    high_weight_genres = ['experimental', 'shoegaze', 'synthwave', 'metal', 'metalcore', 'lofi', 'math rock', 'progressive']
-    
-    if not found_genres:
-        return {
-            'genre_ei': 0.5,
-            'genre_sn': 0.5,
-            'genre_tf': 0.5,
-            'genre_diversity': 0.0
-        }
-
-    for genre in found_genres:
-        w = 2.0 if genre in high_weight_genres else 1.0
-        if genre in e_genres: counts['e'] += w
-        if genre in i_genres: counts['i'] += w
-        if genre in s_genres: counts['s'] += w
-        if genre in n_genres: counts['n'] += w
-        if genre in f_genres: counts['f'] += w
-        if genre in t_genres: counts['t'] += w
-    
-    # Use simple ratio - but understand it's just genre bias
-    # Audio features in train_bot.ipynb will provide the real disambiguation
-    total = len(found_genres)
-    return {
-        'genre_ei': counts['e'] / (counts['e'] + counts['i'] + 1e-6),
-        'genre_sn': counts['n'] / (counts['s'] + counts['n'] + 1e-6),
-        'genre_tf': counts['t'] / (counts['t'] + counts['f'] + 1e-6),
-        'genre_diversity': len(set(found_genres)) / total 
-    }
-def match_genre_to_mbti(genre_str):
-    """Match a genre string to MBTI training genres with smart matching"""
-    if not genre_str:
-        return None
-    
-    genre_str = normalize_genre(genre_str)
-    
-    # Exact match first
-    if genre_str in ALL_TRAINED_GENRES:
-        return genre_str
-    
-    # Substring match (best partial match)
-    best_match = None
-    best_score = 0
-    for trained_genre in ALL_TRAINED_GENRES:
-        if genre_str in trained_genre or trained_genre in genre_str:
-            score = len(trained_genre)  # Prefer longer matches
-            if score > best_score:
-                best_score = score
-                best_match = trained_genre
-    
-    return best_match
 
 def get_accurate_multi_genre(clean_title, clean_artist, track_obj=None, sp=None):
     found_genres = []
@@ -462,7 +366,10 @@ def mass_reprocess_kaggle():
     print("==================================================")
     
     kaggle_dir = r"data\kaggle data set"
-    output_csv = r"data\mbti_master_training_data.csv"
+    
+    # Use config-driven path for output CSV
+    ensure_data_dir_exists()
+    output_csv = get_master_csv_path()
     
     # 1. NO SPOTIFY API NEEDED!
     # Lấy thông tin track name trực tiếp qua trang Web Embed công khai của Spotify 

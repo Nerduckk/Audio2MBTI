@@ -7,6 +7,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from infrastructure.config_loader import ConfigLoader, get_logger
 from infrastructure.monitoring import PerformanceMonitor
+from file_paths import get_data_dir, get_master_csv_path, get_merge_sources
 
 config = ConfigLoader.load()
 logger = get_logger(__name__)
@@ -16,23 +17,15 @@ def aggregate_all_data():
     logger.info("Starting data aggregation - combining all sources")
     logger.info("="*50)
     
-    data_dir = r"data"
-    output_master = os.path.join(data_dir, "mbti_master_training_data.csv")
-    
-    # Danh sách các file CHẤP NHẬN gộp (BỎ QUA file khảo sát: mbti_database_survey.csv)
-    files_to_merge = [
-        "mbti_database_kaggle_reprocessed.csv",
-        "mbti_database_spotify.csv",
-        "mbti_database_youtube.csv",
-        "mbti_database_applemusic.csv",
-        "mock_mbti_data.csv" # Nếu bạn có tự nhập tay ở đây
-    ]
+    output_master = get_master_csv_path()
+    files_to_merge = get_merge_sources()
     
     all_dataframes = []
     total_rows = 0
     
-    for filename in files_to_merge:
-        file_path = os.path.join(data_dir, filename)
+    for file_path in files_to_merge:
+        # Extract just the filename for logging
+        filename = os.path.basename(file_path)
         if os.path.exists(file_path):
             try:
                 df = pd.read_csv(file_path)

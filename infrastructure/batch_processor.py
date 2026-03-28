@@ -9,7 +9,7 @@ import json
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 from pathlib import Path
-from config_loader import ConfigLoader, get_logger
+from .config_loader import ConfigLoader, get_logger
 
 logger = get_logger(__name__)
 

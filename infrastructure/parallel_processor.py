@@ -8,7 +8,7 @@ from multiprocessing import Pool, Queue, Manager
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 from typing import Callable, List, Any, Dict, Optional, Iterable
 import time
-from config_loader import ConfigLoader, get_logger
+from .config_loader import ConfigLoader, get_logger
 
 logger = get_logger(__name__)
 

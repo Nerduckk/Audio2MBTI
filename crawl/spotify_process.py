@@ -109,47 +109,24 @@ import pandas as pd
 import requests
 import urllib.parse
 from transformers import pipeline
+from pathlib import Path
+import sys
+
+# Import shared genre processor
+sys.path.insert(0, str(Path(__file__).parent))
+from mbti_genre_processor import (
+    calculate_genre_mbti_scores, normalize_genre, match_genre_to_mbti,
+    ALL_TRAINED_GENRES
+)
+from file_paths import get_spotify_csv, ensure_data_dir_exists
 
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0' # Tắt cảnh báo TF
 print("\n => Đang khởi động Mô Hình AI HuggingFace (Vui lòng đợi vài giây)...")
 emotion_pipeline = pipeline("text-classification", model="SamLowe/roberta-base-go_emotions")
 
 # ==========================================
-# THỂ LOẠI (GENRE) & ĐIỂM SỐ
+# Data Processing Initialization Complete
 # ==========================================
-e_genres = ['pop', 'dance', 'edm', 'hip hop', 'rap', 'house', 'latin', 'trap', 'club', 'party', 'k-pop', 'reggaeton']
-i_genres = ['lofi', 'indie', 'acoustic', 'jazz', 'classical', 'ambient', 'chill', 'folk', 'sleep', 'bedroom pop']
-s_genres = ['v-pop', 'country', 'r&b', 'mainstream', 'adult standards', 'schlager', 'bolero']
-n_genres = ['experimental', 'psychedelic', 'synthwave', 'shoegaze', 'avant-garde', 'cyberpunk', 'post-rock']
-f_genres = ['soul', 'blues', 'emo', 'ballad', 'romantic', 'vocal', 'gospel', 'singer-songwriter']
-t_genres = ['metal', 'techno', 'math rock', 'idm', 'dubstep', 'trance', 'instrumental', 'hardstyle']
-
-ALL_TRAINED_GENRES = e_genres + i_genres + s_genres + n_genres + f_genres + t_genres
-
-def calculate_genre_mbti_scores(found_genres):
-    ei_score = 0.0
-    sn_score = 0.0
-    tf_score = 0.0
-    
-    high_weight_genres = ['experimental', 'shoegaze', 'synthwave', 'metal', 'lofi', 'math rock', 'indie', 'jazz', 'classical', 'singer-songwriter', 'emo']
-    
-    for genre in found_genres:
-        weight = 2.0 if genre in high_weight_genres else 1.0
-        
-        if genre in e_genres: ei_score += weight
-        if genre in i_genres: ei_score -= weight
-        if genre in s_genres: sn_score += weight
-        if genre in n_genres: sn_score -= weight
-        if genre in t_genres: tf_score += weight
-        if genre in f_genres: tf_score -= weight
-            
-    num_genres = len(found_genres) if len(found_genres) > 0 else 1
-    
-    return {
-        'genre_ei': round(ei_score / num_genres, 4),
-        'genre_sn': round(sn_score / num_genres, 4),
-        'genre_tf': round(tf_score / num_genres, 4)
-    }
 
 def get_accurate_multi_genre(clean_title, clean_artist, track_obj=None, sp=None):
     found_genres = []
@@ -255,11 +232,10 @@ EMOTION_GROUPS = {
 # 5. Chạy Quy Trình
 import sys
 
-# Chuẩn bị file CSV
-if len(sys.argv) > 2:
-    csv_filename = sys.argv[2]
-else:
-    csv_filename = r"data\mbti_database_spotify.csv"
+# Chuẩn bị file CSV - Use config-driven path
+ensure_data_dir_exists()
+csv_filename = get_spotify_csv()
+
 if not os.path.isfile(csv_filename):
     df_empty = pd.DataFrame(columns=[
         'title', 'artists', 'spotify_popularity', 'release_year', 'artist_genres',

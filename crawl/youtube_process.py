@@ -9,12 +9,21 @@ import warnings
 import syncedlyrics
 import re
 import sys
+from pathlib import Path
 sys.stdout.reconfigure(encoding='utf-8')
 import requests
 import urllib.parse
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 from dotenv import load_dotenv
+
+# Import shared genre processor
+sys.path.insert(0, str(Path(__file__).parent))
+from mbti_genre_processor import (
+    calculate_genre_mbti_scores, normalize_genre, match_genre_to_mbti,
+    ALL_TRAINED_GENRES
+)
+from file_paths import get_youtube_csv, ensure_data_dir_exists
 
 # Load environment variables from .env file
 load_dotenv()
@@ -42,16 +51,8 @@ os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0' # Tắt cảnh báo TF
 emotion_pipeline = pipeline("text-classification", model="SamLowe/roberta-base-go_emotions")
 
 # ==========================================
-# 1. BỘ TỪ KHÓA THỂ LOẠI (GENRE) CHUẨN TỪ MODEL MBTI CỦA BẠN
+# Data Processing Initialization Complete
 # ==========================================
-e_genres = ['pop', 'dance', 'edm', 'hip hop', 'rap', 'house', 'latin', 'trap', 'club', 'party', 'k-pop', 'reggaeton']
-i_genres = ['lofi', 'indie', 'acoustic', 'jazz', 'classical', 'ambient', 'chill', 'folk', 'sleep', 'bedroom pop']
-s_genres = ['v-pop', 'country', 'r&b', 'mainstream', 'adult standards', 'schlager', 'bolero']
-n_genres = ['experimental', 'psychedelic', 'synthwave', 'shoegaze', 'avant-garde', 'cyberpunk', 'post-rock']
-f_genres = ['soul', 'blues', 'emo', 'ballad', 'romantic', 'vocal', 'gospel', 'singer-songwriter']
-t_genres = ['metal', 'techno', 'math rock', 'idm', 'dubstep', 'trance', 'instrumental', 'hardstyle']
-
-ALL_TRAINED_GENRES = e_genres + i_genres + s_genres + n_genres + f_genres + t_genres
 
 def get_accurate_multi_genre(raw_title, video_info):
     """
@@ -155,33 +156,33 @@ def get_accurate_multi_genre(raw_title, video_info):
 # 2. THUẬT TOÁN TÍNH ĐIỂM MULTI-GENRE THÀNH VECTOR MBTI
 # ==========================================
 def calculate_genre_mbti_scores(found_genres):
-    """
-    Biến mảng text thể loại thành 3 trục điểm số thập phân cho XGBoost.
-    """
-    ei_score = 0.0
-    sn_score = 0.0
-    tf_score = 0.0
-    
-    high_weight_genres = ['experimental', 'shoegaze', 'synthwave', 'metal', 'lofi', 'math rock', 'indie', 'jazz', 'classical', 'singer-songwriter', 'emo']
+    if not found_genres:
+        return {'genre_ei': 0.5, 'genre_sn': 0.5, 'genre_tf': 0.5}
+        
+    counts = {'e': 0, 'i': 0, 's': 0, 'n': 0, 't': 0, 'f': 0}
+    high_weight_genres = ['experimental', 'shoegaze', 'synthwave', 'metal', 'lofi', 'math rock', 'progressive']
     
     for genre in found_genres:
+        genre = genre.lower()
         weight = 2.0 if genre in high_weight_genres else 1.0
         
-        if genre in e_genres: ei_score += weight
-        if genre in i_genres: ei_score -= weight
+        # Consistent mapping: E, S, T are 1.0; I, N, F are 0.0
+        if genre in e_genres: counts['e'] += weight
+        if genre in i_genres: counts['i'] += weight
+        if genre in s_genres: counts['s'] += weight
+        if genre in n_genres: counts['n'] += weight
+        if genre in t_genres: counts['t'] += weight
+        if genre in f_genres: counts['f'] += weight
             
-        if genre in s_genres: sn_score += weight
-        if genre in n_genres: sn_score -= weight
-            
-        if genre in t_genres: tf_score += weight
-        if genre in f_genres: tf_score -= weight
-            
-    num_genres = len(found_genres) if len(found_genres) > 0 else 1
+    # Alignment: E=1, S=1, T=1 to match training target data
+    genre_ei = counts['e'] / (counts['e'] + counts['i']) if (counts['e'] + counts['i']) > 0 else 0.5
+    genre_sn = counts['s'] / (counts['s'] + counts['n']) if (counts['s'] + counts['n']) > 0 else 0.5
+    genre_tf = counts['t'] / (counts['t'] + counts['f']) if (counts['t'] + counts['f']) > 0 else 0.5
     
     return {
-        'genre_ei': round(ei_score / num_genres, 4),
-        'genre_sn': round(sn_score / num_genres, 4),
-        'genre_tf': round(tf_score / num_genres, 4)
+        'genre_ei': round(genre_ei, 4),
+        'genre_sn': round(genre_sn, 4),
+        'genre_tf': round(genre_tf, 4)
     }
 
 # ==========================================
@@ -271,10 +272,9 @@ else:
 videos = get_youtube_playlist(youtube_playlist_url)
 print(f"Đã tìm thấy {len(videos)} video trong playlist!")
 
-if len(sys.argv) > 2:
-    csv_filename = sys.argv[2]
-else:
-    csv_filename = r"data\mbti_database_youtube.csv"
+# Use config-driven path for CSV output
+ensure_data_dir_exists()
+csv_filename = get_youtube_csv()
 
 if not os.path.isfile(csv_filename):
     df_empty = pd.DataFrame(columns=[

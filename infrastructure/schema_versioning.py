@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Dict, List, Any, Optional
 import hashlib
 from pathlib import Path
-from config_loader import ConfigLoader, get_logger
+from .config_loader import ConfigLoader, get_logger
 
 logger = get_logger(__name__)
 

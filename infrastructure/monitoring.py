@@ -10,7 +10,7 @@ from typing import Dict, List, Any, Optional, Callable
 from pathlib import Path
 from dataclasses import dataclass, asdict
 import statistics
-from config_loader import ConfigLoader, get_logger
+from .config_loader import ConfigLoader, get_logger
 
 logger = get_logger(__name__)
 
