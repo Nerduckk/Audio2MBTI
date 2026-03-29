@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
 import sys
-from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -19,19 +17,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from crawl.file_paths import get_data_dir, get_master_csv_path
 from infrastructure.config_loader import load_cnn_config
-
-
-def run_step(name: str, args: list[str]) -> subprocess.CompletedProcess[str]:
-    print(f"\n=== {name} ===")
-    print(" ".join(args))
-    result = subprocess.run(args, cwd=PROJECT_ROOT, text=True, capture_output=True)
-    if result.stdout:
-        print(result.stdout.strip())
-    if result.stderr:
-        print(result.stderr.strip(), file=sys.stderr)
-    if result.returncode != 0:
-        raise RuntimeError(f"Step failed: {name}")
-    return result
+from infrastructure.pipeline_runner import PipelineRunner
 
 
 def save_test_arrays(test_split_path: Path, output_dir: Path) -> tuple[Path, Path]:
@@ -69,25 +55,25 @@ def main() -> None:
     audio_manifest = data_dir / "audio_manifest.csv"
     cache_dir = data_dir / args.cache_name
     model_dir = PROJECT_ROOT / "models" / args.model_name
-    outputs_dir = PROJECT_ROOT / "outputs"
-    outputs_dir.mkdir(parents=True, exist_ok=True)
 
-    summary: dict[str, object] = {
-        "started_at": datetime.now().isoformat(),
-        "metadata_csv": str(metadata_csv.resolve()),
-    }
+    runner = PipelineRunner(
+        project_root=PROJECT_ROOT,
+        outputs_dir=PROJECT_ROOT / "outputs",
+        summary_prefix="pipeline_run",
+    )
+    runner.attach("metadata_csv", str(metadata_csv.resolve()))
 
     if not args.skip_crawl:
-        run_step("crawl", [python_exe, "crawl/kaggle_mbti_reprocessor.py"])
-        summary["crawl"] = "completed"
+        runner.run_step("crawl", [python_exe, "crawl/kaggle_mbti_reprocessor.py"])
+        runner.attach("crawl", "completed")
     else:
-        summary["crawl"] = "skipped"
+        runner.attach("crawl", "skipped")
 
     if not args.skip_quality:
-        run_step("quality_check", [python_exe, "crawl/check_data_quality.py"])
-        summary["quality_check"] = "completed"
+        runner.run_step("quality_check", [python_exe, "crawl/check_data_quality.py"])
+        runner.attach("quality_check", "completed")
     else:
-        summary["quality_check"] = "skipped"
+        runner.attach("quality_check", "skipped")
 
     build_cmd = [
         python_exe,
@@ -110,21 +96,21 @@ def main() -> None:
     if args.min_audio_duration is not None:
         build_cmd.extend(["--min-duration", str(args.min_audio_duration)])
 
-    build_result = run_step("build_audio_dataset", build_cmd)
-    summary["audio_dataset"] = json.loads(build_result.stdout)
+    build_payload = runner.run_step("build_audio_dataset", build_cmd, parse_json=True)
+    runner.attach("audio_dataset", build_payload)
 
     manifest_df = pd.read_csv(audio_manifest)
     valid_statuses = {"existing_valid", "downloaded_valid"}
     valid_manifest = manifest_df[manifest_df["status"].isin(valid_statuses)].copy()
     label_coverage = int(valid_manifest["mbti_label"].nunique()) if not valid_manifest.empty else 0
-    summary["audio_quality_gate"] = {
+    runner.attach("audio_quality_gate", {
         "valid_audio_rows": int(len(valid_manifest)),
         "label_coverage": label_coverage,
         "rejected_rows": int((~manifest_df["status"].isin(valid_statuses)).sum()),
         "accepted_statuses": sorted(valid_statuses),
-    }
+    })
 
-    extract_result = run_step(
+    extract_payload = runner.run_step(
         "extract_features",
         [
             python_exe,
@@ -134,24 +120,24 @@ def main() -> None:
             "--output-dir",
             str(cache_dir),
         ],
+        parse_json=True,
     )
-    extract_payload = json.loads(extract_result.stdout)
-    summary["extract_features"] = extract_payload
+    runner.attach("extract_features", extract_payload)
 
     X_path = Path(extract_payload["X_path"])
     y_path = Path(extract_payload["y_path"])
     X = np.load(X_path)
     y = np.load(y_path)
     sample_count = int(X.shape[0])
-    summary["sample_count"] = sample_count
+    runner.attach("sample_count", sample_count)
     extract_label_coverage = int(len({tuple(row.tolist()) for row in y}))
-    summary["extract_quality_gate"] = {
+    runner.attach("extract_quality_gate", {
         "sample_count": sample_count,
         "label_coverage": extract_label_coverage,
-    }
+    })
 
     if sample_count < args.min_train_samples or extract_label_coverage < args.min_label_coverage or args.skip_train:
-        summary["train"] = {
+        runner.attach("train", {
             "status": "skipped",
             "reason": (
                 "sample_count_below_threshold"
@@ -162,9 +148,9 @@ def main() -> None:
             ),
             "min_train_samples": args.min_train_samples,
             "min_label_coverage": args.min_label_coverage,
-        }
+        })
     else:
-        train_result = run_step(
+        train_payload = runner.run_step(
             "train",
             [
                 python_exe,
@@ -176,16 +162,16 @@ def main() -> None:
                 "--output-dir",
                 str(model_dir),
             ],
+            parse_json=True,
         )
-        train_payload = json.loads(train_result.stdout)
-        summary["train"] = train_payload
+        runner.attach("train", train_payload)
 
         if not args.skip_eval:
             test_split_path = Path(train_payload["test_split_path"])
             X_test_path, y_test_path = save_test_arrays(test_split_path, model_dir)
             config = load_cnn_config()
             metrics_path = Path(config.get("paths", {}).get("results_dir", "./outputs/cnn")) / f"{args.model_name}_metrics.json"
-            eval_result = run_step(
+            eval_payload = runner.run_step(
                 "evaluate",
                 [
                     python_exe,
@@ -199,18 +185,15 @@ def main() -> None:
                     "--output-path",
                     str(metrics_path),
                 ],
+                parse_json=True,
             )
-            summary["evaluate"] = json.loads(eval_result.stdout)
+            runner.attach("evaluate", eval_payload)
         else:
-            summary["evaluate"] = {"status": "skipped", "reason": "skip_eval_flag"}
+            runner.attach("evaluate", {"status": "skipped", "reason": "skip_eval_flag"})
 
-    summary["finished_at"] = datetime.now().isoformat()
-    summary_path = outputs_dir / f"pipeline_run_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-    with open(summary_path, "w", encoding="utf-8") as handle:
-        json.dump(summary, handle, indent=2)
-
+    summary_path = runner.finalize()
     print("\n=== summary ===")
-    print(json.dumps({**summary, "summary_path": str(summary_path.resolve())}, indent=2))
+    print(json.dumps({**runner.summary, "summary_path": str(summary_path.resolve())}, indent=2))
 
 
 if __name__ == "__main__":

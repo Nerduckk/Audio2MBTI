@@ -1146,3 +1146,6 @@
 2026-03-29 16:26:41,535 - infrastructure.batch_processor - INFO - Batch saved: 50 records to d:\project\data\mbti_master_training_data.csv (Total: 14850/14850)
 2026-03-29 16:29:11,878 - infrastructure.batch_processor - INFO - Batch saved: 50 records to d:\project\data\mbti_master_training_data.csv (Total: 14900/14900)
 2026-03-29 16:32:20,204 - infrastructure.batch_processor - INFO - Batch saved: 50 records to d:\project\data\mbti_master_training_data.csv (Total: 14950/14950)
+2026-03-29 17:32:58,964 - infrastructure.monitoring - INFO - Metrics saved to D:\project\outputs\data_pipeline_run_metrics.json
+2026-03-29 17:34:02,002 - infrastructure.monitoring - INFO - Metrics saved to D:\project\outputs\pipeline_run_metrics.json
+2026-03-29 17:36:23,026 - infrastructure.parallel_processor - INFO - Parallel processor initialized: 4 workers, multiprocessing=False, chunk_size=2

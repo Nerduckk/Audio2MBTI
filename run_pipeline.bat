@@ -15,20 +15,11 @@ echo.
 
 REM Phase 1: Data Collection (only with real data)
 
-echo [1/2] Processing Kaggle Dataset...
-python crawl\kaggle_mbti_reprocessor.py
+echo [1/2] Running Data Pipeline...
+python scripts\run_data_pipeline.py
 if errorlevel 1 (
     echo.
-    echo ERROR: Kaggle processing failed
-    goto end
-)
-
-echo.
-echo [2/2] Quality Check...
-python crawl\check_data_quality.py
-if errorlevel 1 (
-    echo.
-    echo ERROR: Quality check failed
+    echo ERROR: Data pipeline failed
     goto end
 )
 
