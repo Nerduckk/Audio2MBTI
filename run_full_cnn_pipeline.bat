@@ -28,17 +28,10 @@ if "%MIN_TRAIN_SAMPLES%"=="" set MIN_TRAIN_SAMPLES=64
 set MIN_LABEL_COVERAGE=%PIPELINE_MIN_LABEL_COVERAGE%
 if "%MIN_LABEL_COVERAGE%"=="" set MIN_LABEL_COVERAGE=8
 
-echo ============================================
-echo AUDIO2MBTI FULL CNN PIPELINE
-echo ============================================
-echo per_label_limit=%PER_LABEL_LIMIT%
-echo total_limit=%TOTAL_LIMIT%
-echo audio_duration=%AUDIO_DURATION%
-echo crawl_batch_size=%CRAWL_BATCH_SIZE%
-echo min_audio_duration=%MIN_AUDIO_DURATION%
-echo min_audio_size_bytes=%MIN_AUDIO_SIZE_BYTES%
-echo min_train_samples=%MIN_TRAIN_SAMPLES%
-echo min_label_coverage=%MIN_LABEL_COVERAGE%
+echo audio2mbti full cnn pipeline
+echo metadata: data\mbti_cnn_metadata.csv
+echo audio: data\audio_files
+echo model: models\cnn
 echo.
 
 python scripts\run_full_cnn_pipeline.py ^
@@ -53,10 +46,10 @@ python scripts\run_full_cnn_pipeline.py ^
 
 if errorlevel 1 (
   echo.
-  echo ERROR: full CNN pipeline failed
+  echo full cnn pipeline failed
   exit /b 1
 )
 
 echo.
-echo FULL CNN PIPELINE COMPLETE
+echo full cnn pipeline complete
 exit /b 0

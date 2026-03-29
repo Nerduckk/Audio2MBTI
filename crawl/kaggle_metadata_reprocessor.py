@@ -81,10 +81,6 @@ def normalize_track(track: dict, mbti_label: str, playlist_id: str, playlist_url
 
 
 def mass_reprocess_kaggle_metadata(max_playlists=None, max_tracks_per_playlist=None, batch_size=50):
-    print("==================================================")
-    print(" KAGGLE METADATA-ONLY REPROCESSOR FOR CNN ")
-    print("==================================================")
-
     kaggle_dir = r"data\kaggle data set"
     output_csv = get_cnn_metadata_csv()
     batch_processor = BatchProcessor(batch_size=batch_size, output_file=output_csv)
@@ -116,7 +112,7 @@ def mass_reprocess_kaggle_metadata(max_playlists=None, max_tracks_per_playlist=N
                         f"{str(row['artists']).strip().lower()}"
                     )
                     processed_songs.add(song_key)
-                print(f"Tìm thấy {output_csv}, đã có {len(processed_songs)} bài metadata.")
+                print(f"existing_metadata={len(processed_songs)}")
         except pd.errors.EmptyDataError:
             pass
     else:
@@ -138,14 +134,12 @@ def mass_reprocess_kaggle_metadata(max_playlists=None, max_tracks_per_playlist=N
 
     spotify_scraper = SpotifyClient()
     total_playlists = len(playlist_ids)
+    print(f"playlists={total_playlists} output={output_csv}")
 
     for idx, (pid, mbti_label) in enumerate(playlist_ids, 1):
         try:
             percentage = (idx / total_playlists) * 100
-            print(f"\n==================================================")
-            print(f"TIẾN ĐỘ: {percentage:.2f}% ({idx}/{total_playlists})")
-            print(f"Playlist ID: {pid} | MBTI: {mbti_label}")
-            print("==================================================")
+            print(f"[{idx}/{total_playlists}] {percentage:.1f}% playlist={pid} mbti={mbti_label}")
 
             playlist_url = f"https://open.spotify.com/playlist/{pid}"
             tracks_data = []
@@ -158,12 +152,12 @@ def mass_reprocess_kaggle_metadata(max_playlists=None, max_tracks_per_playlist=N
                     if tracks_data:
                         break
                 except Exception as exc:
-                    print(f"  [!] Spotify scraper error: {str(exc)[:120]}")
+                    print(f"  scraper_error={str(exc)[:120]}")
                 attempts += 1
                 time.sleep(2 ** attempts)
 
             if not tracks_data:
-                print("  [!] SKIPPED: không lấy được track list.")
+                print("  skipped=no_tracks")
                 continue
 
             if max_tracks_per_playlist is not None:
@@ -187,15 +181,15 @@ def mass_reprocess_kaggle_metadata(max_playlists=None, max_tracks_per_playlist=N
                 batch_processor.add(row)
                 new_rows += 1
 
-            print(f"  ✓ new_rows={new_rows} | duplicates={duplicates} | total_saved={batch_processor.total_saved}")
+            print(f"  new_rows={new_rows} duplicates={duplicates} saved={batch_processor.total_saved}")
             time.sleep(random.uniform(0.5, 1.5))
         except Exception as exc:
-            print(f"  [!] Playlist error {pid}: {exc}")
+            print(f"  playlist_error={pid} {exc}")
             time.sleep(3)
 
     batch_processor.flush()
     spotify_scraper.close()
-    print(f"\n✓ Hoàn thành! Metadata lưu tại {output_csv} | total_saved={batch_processor.total_saved}")
+    print(f"done saved={batch_processor.total_saved} metadata={output_csv}")
 
 
 if __name__ == "__main__":

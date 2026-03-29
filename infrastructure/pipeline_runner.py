@@ -33,8 +33,7 @@ class PipelineRunner:
         stream_output: bool = False,
     ) -> Any:
         args = [str(arg) for arg in args]
-        print(f"\n=== {name} ===")
-        print(" ".join(args))
+        print(f"\n[{name}]")
 
         timer_id = self.metrics.start_timer(name)
         if stream_output:
