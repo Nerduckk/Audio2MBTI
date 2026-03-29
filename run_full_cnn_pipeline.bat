@@ -13,6 +13,9 @@ if "%TOTAL_LIMIT%"=="" set TOTAL_LIMIT=400
 set AUDIO_DURATION=%PIPELINE_AUDIO_DURATION%
 if "%AUDIO_DURATION%"=="" set AUDIO_DURATION=20
 
+set CRAWL_BATCH_SIZE=%PIPELINE_CRAWL_BATCH_SIZE%
+if "%CRAWL_BATCH_SIZE%"=="" set CRAWL_BATCH_SIZE=20
+
 set MIN_AUDIO_DURATION=%PIPELINE_MIN_AUDIO_DURATION%
 if "%MIN_AUDIO_DURATION%"=="" set MIN_AUDIO_DURATION=12
 
@@ -31,6 +34,7 @@ echo ============================================
 echo per_label_limit=%PER_LABEL_LIMIT%
 echo total_limit=%TOTAL_LIMIT%
 echo audio_duration=%AUDIO_DURATION%
+echo crawl_batch_size=%CRAWL_BATCH_SIZE%
 echo min_audio_duration=%MIN_AUDIO_DURATION%
 echo min_audio_size_bytes=%MIN_AUDIO_SIZE_BYTES%
 echo min_train_samples=%MIN_TRAIN_SAMPLES%
@@ -41,6 +45,7 @@ python scripts\run_full_cnn_pipeline.py ^
   --per-label-limit %PER_LABEL_LIMIT% ^
   --total-limit %TOTAL_LIMIT% ^
   --duration %AUDIO_DURATION% ^
+  --crawl-batch-size %CRAWL_BATCH_SIZE% ^
   --min-audio-duration %MIN_AUDIO_DURATION% ^
   --min-audio-size-bytes %MIN_AUDIO_SIZE_BYTES% ^
   --min-train-samples %MIN_TRAIN_SAMPLES% ^

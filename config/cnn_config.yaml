@@ -31,6 +31,7 @@ cnn:
     probability: 0.5
 
   paths:
+    metadata_csv: "./data/mbti_cnn_metadata.csv"
     audio_dir: "./data/audio_files"
     cache_dir: "./data/cnn_cache"
     models_dir: "./models/cnn"

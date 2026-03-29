@@ -259,7 +259,7 @@ def process_track_with_all_features(track_info, batch_processor, session, proces
             processed_songs.discard(song_key)
         return None
 
-def mass_reprocess_kaggle(max_playlists=None, max_tracks_per_playlist=None):
+def mass_reprocess_kaggle(max_playlists=None, max_tracks_per_playlist=None, batch_size=20):
     print("==================================================")
     print(" TOOL REPROCESS DỮ LIỆU KAGGLE (SPOTIFY API) ")
     print("==================================================")
@@ -270,8 +270,8 @@ def mass_reprocess_kaggle(max_playlists=None, max_tracks_per_playlist=None):
     ensure_data_dir_exists()
     output_csv = get_master_csv_path()
     
-    # Initialize BatchProcessor for efficient CSV writing (FAST MODE: batch_size=50)
-    batch_processor = BatchProcessor(batch_size=50, output_file=output_csv)
+    # Smaller batch size makes progress visible sooner in logs and on disk.
+    batch_processor = BatchProcessor(batch_size=batch_size, output_file=output_csv)
     
     random.seed(42)
 
@@ -447,8 +447,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--max-playlists", type=int, default=None)
     parser.add_argument("--max-tracks-per-playlist", type=int, default=None)
+    parser.add_argument("--batch-size", type=int, default=20)
     args = parser.parse_args()
     mass_reprocess_kaggle(
         max_playlists=args.max_playlists,
         max_tracks_per_playlist=args.max_tracks_per_playlist,
+        batch_size=args.batch_size,
     )

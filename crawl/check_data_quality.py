@@ -78,6 +78,5 @@ def check_data_quality(csv_path, fix_missing=False, output_path=None):
     print("==================================================")
 
 if __name__ == "__main__":
-    # Use config-driven path instead of hard-coded
-    master_csv = get_master_csv_path()
-    check_data_quality(master_csv)
+    csv_path = sys.argv[1] if len(sys.argv) > 1 else get_master_csv_path()
+    check_data_quality(csv_path)

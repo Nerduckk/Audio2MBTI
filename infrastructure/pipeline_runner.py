@@ -30,13 +30,17 @@ class PipelineRunner:
         args: Iterable[str],
         parse_json: bool = False,
         allow_empty_stdout: bool = True,
+        stream_output: bool = False,
     ) -> Any:
         args = [str(arg) for arg in args]
         print(f"\n=== {name} ===")
         print(" ".join(args))
 
         timer_id = self.metrics.start_timer(name)
-        result = subprocess.run(args, cwd=self.project_root, text=True, capture_output=True)
+        if stream_output:
+            result = self._run_streaming(args)
+        else:
+            result = subprocess.run(args, cwd=self.project_root, text=True, capture_output=True)
         duration = self.metrics.end_timer(timer_id)
 
         if result.stdout:
@@ -86,3 +90,30 @@ class PipelineRunner:
                 continue
 
         raise json.JSONDecodeError("Could not parse JSON payload from stdout", stdout, 0)
+
+    def _run_streaming(self, args: list[str]) -> subprocess.CompletedProcess[str]:
+        """Run child process with live output streaming to the terminal."""
+        process = subprocess.Popen(
+            args,
+            cwd=self.project_root,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            bufsize=1,
+        )
+
+        assert process.stdout is not None
+        lines: list[str] = []
+        for line in process.stdout:
+            print(line, end="")
+            lines.append(line)
+
+        return_code = process.wait()
+        return subprocess.CompletedProcess(
+            args=args,
+            returncode=return_code,
+            stdout="".join(lines),
+            stderr="",
+        )

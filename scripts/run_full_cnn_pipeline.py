@@ -34,6 +34,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--per-label-limit", type=int, default=25)
     parser.add_argument("--total-limit", type=int, default=400)
     parser.add_argument("--duration", type=int, default=20)
+    parser.add_argument("--crawl-batch-size", type=int, default=20)
     parser.add_argument("--min-audio-duration", type=float, default=None)
     parser.add_argument("--min-audio-size-bytes", type=int, default=180000)
     parser.add_argument("--min-train-samples", type=int, default=64)
@@ -51,7 +52,10 @@ def main() -> None:
     args = build_parser().parse_args()
     python_exe = sys.executable
     data_dir = Path(get_data_dir())
-    metadata_csv = Path(get_master_csv_path())
+    cnn_config = load_cnn_config()
+    metadata_csv = Path(cnn_config.get("paths", {}).get("metadata_csv", str(Path(get_data_dir()) / "mbti_cnn_metadata.csv")))
+    if not metadata_csv.is_absolute():
+        metadata_csv = (PROJECT_ROOT / metadata_csv).resolve()
     audio_manifest = data_dir / "audio_manifest.csv"
     cache_dir = data_dir / args.cache_name
     model_dir = PROJECT_ROOT / "models" / args.model_name
@@ -64,13 +68,27 @@ def main() -> None:
     runner.attach("metadata_csv", str(metadata_csv.resolve()))
 
     if not args.skip_crawl:
-        runner.run_step("crawl", [python_exe, "crawl/kaggle_mbti_reprocessor.py"])
+        runner.run_step(
+            "crawl",
+            [
+                python_exe,
+                "crawl/kaggle_metadata_reprocessor.py",
+                "--batch-size",
+                str(args.crawl_batch_size),
+            ],
+            stream_output=True,
+        )
         runner.attach("crawl", "completed")
+        runner.attach("crawl_mode", "metadata")
     else:
         runner.attach("crawl", "skipped")
 
     if not args.skip_quality:
-        runner.run_step("quality_check", [python_exe, "crawl/check_data_quality.py"])
+        runner.run_step(
+            "quality_check",
+            [python_exe, "crawl/check_data_quality.py", str(metadata_csv)],
+            stream_output=True,
+        )
         runner.attach("quality_check", "completed")
     else:
         runner.attach("quality_check", "skipped")
