@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import random
 import sys
@@ -22,18 +23,21 @@ from infrastructure.retry_logic import RateLimiter
 load_dotenv()
 sys.stdout.reconfigure(encoding="utf-8")
 
-spotify_rate_limiter = RateLimiter(requests_per_second=1.0)
-
-
 def get_cnn_metadata_csv() -> str:
     """Dedicated metadata CSV for the CNN pipeline."""
     ensure_data_dir_exists()
     return str(Path("data") / "mbti_cnn_metadata.csv")
 
 
+def get_cnn_metadata_state_path() -> Path:
+    """State file used to resume playlist crawling."""
+    ensure_data_dir_exists()
+    return Path("data") / "mbti_cnn_metadata_state.json"
+
+
 def load_playlist_ids(kaggle_dir: str) -> list[tuple[str, str]]:
     playlist_ids: list[tuple[str, str]] = []
-    for file in os.listdir(kaggle_dir):
+    for file in sorted(os.listdir(kaggle_dir)):
         if not file.endswith("_df.csv") or file.startswith("combined"):
             continue
         temp_df = pd.read_csv(os.path.join(kaggle_dir, file))
@@ -43,9 +47,22 @@ def load_playlist_ids(kaggle_dir: str) -> list[tuple[str, str]]:
         if not label_values:
             continue
         label = label_values[0]
-        for pid in temp_df["playlist_id"].dropna().astype(str).unique().tolist():
+        for pid in sorted(temp_df["playlist_id"].dropna().astype(str).unique().tolist()):
             playlist_ids.append((pid, label))
     return playlist_ids
+
+
+def load_state(state_path: Path) -> dict:
+    if not state_path.exists():
+        return {"completed_playlists": []}
+    try:
+        return json.loads(state_path.read_text(encoding="utf-8"))
+    except Exception:
+        return {"completed_playlists": []}
+
+
+def save_state(state_path: Path, state: dict) -> None:
+    state_path.write_text(json.dumps(state, indent=2), encoding="utf-8")
 
 
 def normalize_track(track: dict, mbti_label: str, playlist_id: str, playlist_url: str) -> dict | None:
@@ -80,10 +97,20 @@ def normalize_track(track: dict, mbti_label: str, playlist_id: str, playlist_url
     }
 
 
-def mass_reprocess_kaggle_metadata(max_playlists=None, max_tracks_per_playlist=None, batch_size=50):
+def mass_reprocess_kaggle_metadata(
+    max_playlists=None,
+    max_tracks_per_playlist=None,
+    batch_size=50,
+    requests_per_second=1.0,
+    playlist_delay_min=0.5,
+    playlist_delay_max=1.5,
+    resume=True,
+):
     kaggle_dir = r"data\kaggle data set"
     output_csv = get_cnn_metadata_csv()
+    state_path = get_cnn_metadata_state_path()
     batch_processor = BatchProcessor(batch_size=batch_size, output_file=output_csv)
+    spotify_rate_limiter = RateLimiter(requests_per_second=requests_per_second)
     random.seed(42)
 
     if not os.path.exists(kaggle_dir):
@@ -95,7 +122,9 @@ def mass_reprocess_kaggle_metadata(max_playlists=None, max_tracks_per_playlist=N
         print("Không tìm thấy playlist_id trong dữ liệu Kaggle.")
         return
 
-    random.shuffle(playlist_ids)
+    state = load_state(state_path)
+    completed_playlists = set(str(pid) for pid in state.get("completed_playlists", []))
+
     if max_playlists is not None:
         playlist_ids = playlist_ids[:max_playlists]
 
@@ -112,6 +141,10 @@ def mass_reprocess_kaggle_metadata(max_playlists=None, max_tracks_per_playlist=N
                         f"{str(row['artists']).strip().lower()}"
                     )
                     processed_songs.add(song_key)
+                if "playlist_id" in df_out.columns and resume:
+                    completed_playlists.update(
+                        df_out["playlist_id"].dropna().astype(str).unique().tolist()
+                    )
                 print(f"existing_metadata={len(processed_songs)}")
         except pd.errors.EmptyDataError:
             pass
@@ -132,9 +165,12 @@ def mass_reprocess_kaggle_metadata(max_playlists=None, max_tracks_per_playlist=N
         )
         df_empty.to_csv(output_csv, index=False, encoding="utf-8-sig")
 
+    if resume:
+        playlist_ids = [(pid, label) for pid, label in playlist_ids if str(pid) not in completed_playlists]
+
     spotify_scraper = SpotifyClient()
     total_playlists = len(playlist_ids)
-    print(f"playlists={total_playlists} output={output_csv}")
+    print(f"playlists={total_playlists} output={output_csv} resume={'on' if resume else 'off'}")
 
     for idx, (pid, mbti_label) in enumerate(playlist_ids, 1):
         try:
@@ -182,14 +218,17 @@ def mass_reprocess_kaggle_metadata(max_playlists=None, max_tracks_per_playlist=N
                 new_rows += 1
 
             print(f"  new_rows={new_rows} duplicates={duplicates} saved={batch_processor.total_saved}")
-            time.sleep(random.uniform(0.5, 1.5))
+            completed_playlists.add(str(pid))
+            save_state(state_path, {"completed_playlists": sorted(completed_playlists)})
+            time.sleep(random.uniform(playlist_delay_min, playlist_delay_max))
         except Exception as exc:
             print(f"  playlist_error={pid} {exc}")
             time.sleep(3)
 
     batch_processor.flush()
     spotify_scraper.close()
-    print(f"done saved={batch_processor.total_saved} metadata={output_csv}")
+    save_state(state_path, {"completed_playlists": sorted(completed_playlists)})
+    print(f"done saved={batch_processor.total_saved} metadata={output_csv} state={state_path}")
 
 
 if __name__ == "__main__":
@@ -199,9 +238,17 @@ if __name__ == "__main__":
     parser.add_argument("--max-playlists", type=int, default=None)
     parser.add_argument("--max-tracks-per-playlist", type=int, default=None)
     parser.add_argument("--batch-size", type=int, default=50)
+    parser.add_argument("--requests-per-second", type=float, default=1.0)
+    parser.add_argument("--playlist-delay-min", type=float, default=0.5)
+    parser.add_argument("--playlist-delay-max", type=float, default=1.5)
+    parser.add_argument("--no-resume", dest="resume", action="store_false")
     args = parser.parse_args()
     mass_reprocess_kaggle_metadata(
         max_playlists=args.max_playlists,
         max_tracks_per_playlist=args.max_tracks_per_playlist,
         batch_size=args.batch_size,
+        requests_per_second=args.requests_per_second,
+        playlist_delay_min=args.playlist_delay_min,
+        playlist_delay_max=args.playlist_delay_max,
+        resume=args.resume,
     )

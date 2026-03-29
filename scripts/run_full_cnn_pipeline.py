@@ -35,6 +35,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--total-limit", type=int, default=400)
     parser.add_argument("--duration", type=int, default=20)
     parser.add_argument("--crawl-batch-size", type=int, default=20)
+    parser.add_argument("--requests-per-second", type=float, default=1.0)
+    parser.add_argument("--playlist-delay-min", type=float, default=0.5)
+    parser.add_argument("--playlist-delay-max", type=float, default=1.5)
     parser.add_argument("--min-audio-duration", type=float, default=None)
     parser.add_argument("--min-audio-size-bytes", type=int, default=180000)
     parser.add_argument("--min-train-samples", type=int, default=64)
@@ -75,6 +78,12 @@ def main() -> None:
                 "crawl/kaggle_metadata_reprocessor.py",
                 "--batch-size",
                 str(args.crawl_batch_size),
+                "--requests-per-second",
+                str(args.requests_per_second),
+                "--playlist-delay-min",
+                str(args.playlist_delay_min),
+                "--playlist-delay-max",
+                str(args.playlist_delay_max),
             ],
             stream_output=True,
         )

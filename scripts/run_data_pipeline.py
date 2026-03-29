@@ -22,6 +22,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--skip-quality", action="store_true")
     parser.add_argument("--crawl-batch-size", type=int, default=20)
     parser.add_argument("--crawl-mode", choices=["legacy", "metadata"], default="metadata")
+    parser.add_argument("--requests-per-second", type=float, default=1.0)
+    parser.add_argument("--playlist-delay-min", type=float, default=0.5)
+    parser.add_argument("--playlist-delay-max", type=float, default=1.5)
     return parser
 
 
@@ -55,6 +58,12 @@ def main() -> None:
                 crawl_script,
                 "--batch-size",
                 str(args.crawl_batch_size),
+                "--requests-per-second",
+                str(args.requests_per_second),
+                "--playlist-delay-min",
+                str(args.playlist_delay_min),
+                "--playlist-delay-max",
+                str(args.playlist_delay_max),
             ],
             stream_output=True,
         )
