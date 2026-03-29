@@ -51,6 +51,24 @@ def get_master_csv_path():
     return os.path.join(data_dir, master_csv)
 
 
+def get_audio_dir():
+    """Get path to raw audio files directory."""
+    data_dir = get_data_dir()
+    cnn_audio_dir = config.get('cnn', {}).get('paths', {}).get('audio_dir')
+    if cnn_audio_dir:
+        return os.path.abspath(cnn_audio_dir)
+    return os.path.join(data_dir, 'audio_files')
+
+
+def get_spectrograms_dir():
+    """Get path to cached spectrogram directory."""
+    data_dir = get_data_dir()
+    cnn_cache_dir = config.get('cnn', {}).get('paths', {}).get('cache_dir')
+    if cnn_cache_dir:
+        return os.path.abspath(cnn_cache_dir)
+    return os.path.join(data_dir, 'spectrograms')
+
+
 def get_kaggle_csv():
     """Get path for Kaggle crawler output CSV"""
     return get_csv_path('kaggle_csv')

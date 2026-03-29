@@ -149,3 +149,24 @@ def get_logger(name: str) -> logging.Logger:
             logger.addHandler(file_handler)
     
     return logger
+
+
+def load_cnn_config(config_path: Optional[str] = None) -> Dict[str, Any]:
+    """Load CNN-specific configuration from `config/cnn_config.yaml`."""
+    if config_path is None:
+        possible_paths = [
+            Path.cwd() / "config" / "cnn_config.yaml",
+            Path.cwd() / "cnn_config.yaml"
+        ]
+        for path in possible_paths:
+            if path.exists():
+                config_path = str(path)
+                break
+
+    if config_path is None:
+        raise FileNotFoundError("cnn_config.yaml not found in project root or config directory")
+
+    with open(config_path, "r", encoding="utf-8") as handle:
+        payload = yaml.safe_load(handle) or {}
+
+    return payload.get("cnn", payload)

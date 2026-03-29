@@ -16,6 +16,40 @@ from .config_loader import ConfigLoader, get_logger
 logger = get_logger(__name__)
 
 
+def validate_spectrogram_shape(spectrogram: np.ndarray, expected_shape: tuple = (128, 1290)) -> bool:
+    """Validate a Mel spectrogram shape."""
+    if tuple(spectrogram.shape) != tuple(expected_shape):
+        raise ValueError(f"Shape mismatch: got {tuple(spectrogram.shape)}, expected {tuple(expected_shape)}")
+    return True
+
+
+def validate_audio_files(audio_dir: str) -> Dict[str, Any]:
+    """Inspect audio files under a directory."""
+    supported_exts = {".mp3", ".wav", ".flac", ".m4a", ".ogg"}
+    valid_files = []
+    corrupt_files = []
+
+    if not os.path.exists(audio_dir):
+        return {"total": 0, "valid": [], "corrupt": [], "missing_dir": True}
+
+    for root, _dirs, files in os.walk(audio_dir):
+        for filename in files:
+            if os.path.splitext(filename)[1].lower() not in supported_exts:
+                continue
+            full_path = os.path.join(root, filename)
+            if os.path.getsize(full_path) > 0:
+                valid_files.append(full_path)
+            else:
+                corrupt_files.append(full_path)
+
+    return {
+        "total": len(valid_files) + len(corrupt_files),
+        "valid": valid_files,
+        "corrupt": corrupt_files,
+        "missing_dir": False,
+    }
+
+
 class DataValidator:
     """Validates data at various pipeline stages"""
     

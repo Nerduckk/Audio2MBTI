@@ -8,12 +8,17 @@ __pycache__/
 # Ignore large datasets and model files
 data/
 models/
+outputs/
+logs/*.json
 
 # Ignore downloaded audio and ffmpeg binaries
 ffmpeg-master-latest-win64-gpl/
 *.mp3
 *.m4a
 *.part
+*.npy
+*.npz
+*.pt
 
 # Ignore secret environment variables
 .env
