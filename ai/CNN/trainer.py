@@ -8,6 +8,7 @@ from typing import Dict, Optional, Tuple
 
 import numpy as np
 import torch
+from sklearn.metrics import accuracy_score
 from sklearn.model_selection import train_test_split
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
@@ -113,6 +114,8 @@ class ModelTrainer:
 
         epochs = int(self.training_cfg.get("epochs", 20))
         patience = int(self.training_cfg.get("early_stopping_patience", 5))
+        min_val_accuracy = self.training_cfg.get("min_val_accuracy")
+        min_val_accuracy_epoch = int(self.training_cfg.get("min_val_accuracy_epoch", 0))
         output_root = Path(output_dir)
         output_root.mkdir(parents=True, exist_ok=True)
         checkpoint_path = output_root / "audio_cnn.pt"
@@ -120,10 +123,11 @@ class ModelTrainer:
         split_path = output_root / "test_split.npz"
 
         best_val_loss = float("inf")
+        best_val_accuracy = 0.0
         epochs_without_improvement = 0
-        history = {"train_loss": [], "val_loss": []}
+        history = {"train_loss": [], "val_loss": [], "val_accuracy": []}
 
-        for _epoch in range(epochs):
+        for epoch_index in range(epochs):
             model.train()
             train_loss = 0.0
             for features, targets in train_loader:
@@ -139,8 +143,11 @@ class ModelTrainer:
 
             train_loss /= max(len(train_loader.dataset), 1)
             val_loss = self._evaluate_loss(model, val_loader, criterion)
+            val_accuracy = self._evaluate_accuracy(model, val_loader)
             history["train_loss"].append(train_loss)
             history["val_loss"].append(val_loss)
+            history["val_accuracy"].append(val_accuracy)
+            best_val_accuracy = max(best_val_accuracy, val_accuracy)
 
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
@@ -157,6 +164,13 @@ class ModelTrainer:
                 epochs_without_improvement += 1
                 if epochs_without_improvement >= patience:
                     break
+
+            if (
+                min_val_accuracy is not None
+                and (epoch_index + 1) >= min_val_accuracy_epoch
+                and best_val_accuracy < float(min_val_accuracy)
+            ):
+                break
 
         np.savez_compressed(split_path, X_test=X_test, y_test=y_test)
         with open(history_path, "w", encoding="utf-8") as handle:
@@ -181,3 +195,25 @@ class ModelTrainer:
                 loss = criterion(logits, targets)
                 total_loss += loss.item() * features.size(0)
         return total_loss / max(len(loader.dataset), 1)
+
+    def _evaluate_accuracy(self, model: nn.Module, loader: DataLoader) -> float:
+        model.eval()
+        all_preds = []
+        all_targets = []
+        with torch.no_grad():
+            for features, targets in loader:
+                features = features.to(self.device)
+                logits = model(features)
+                preds = (torch.sigmoid(logits) >= 0.5).float().cpu().numpy()
+                all_preds.append(preds)
+                all_targets.append(targets.cpu().numpy())
+
+        if not all_preds:
+            return 0.0
+
+        y_pred = np.concatenate(all_preds, axis=0)
+        y_true = np.concatenate(all_targets, axis=0)
+        per_dimension_accuracy = [
+            accuracy_score(y_true[:, idx], y_pred[:, idx]) for idx in range(y_true.shape[1])
+        ]
+        return float(np.mean(per_dimension_accuracy))

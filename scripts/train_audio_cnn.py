@@ -11,8 +11,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from infrastructure.cnn_pipeline import CNNPipeline
 from infrastructure.config_loader import load_cnn_config
+from pipelines.cnn_pipeline import CNNPipeline
 
 
 def build_parser() -> argparse.ArgumentParser:

@@ -220,6 +220,9 @@ class FeatureExtractor:
         audio_dir: Optional[str],
         output_dir: str,
         output_prefix: str = "cnn_dataset",
+        x_filename: Optional[str] = None,
+        y_filename: Optional[str] = None,
+        manifest_filename: Optional[str] = None,
     ) -> Dict[str, str]:
         """Build cached dataset arrays and a manifest file."""
         items = self.build_dataset_index(metadata_csv=metadata_csv, audio_dir=audio_dir)
@@ -255,9 +258,9 @@ class FeatureExtractor:
         X = np.stack(X_rows).astype(np.float32)
         y = np.stack(y_rows).astype(np.float32)
 
-        X_path = output_root / f"{output_prefix}_X.npy"
-        y_path = output_root / f"{output_prefix}_y.npy"
-        manifest_path = output_root / f"{output_prefix}_manifest.json"
+        X_path = output_root / (x_filename or f"{output_prefix}_X.npy")
+        y_path = output_root / (y_filename or f"{output_prefix}_y.npy")
+        manifest_path = output_root / (manifest_filename or f"{output_prefix}_manifest.json")
 
         np.save(X_path, X)
         np.save(y_path, y)

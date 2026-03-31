@@ -28,7 +28,7 @@ logging:
 
 # Data Configuration
 data:
-  master_csv: "mbti_master_training_data.csv"
+  master_csv: "mbti_cnn_metadata.csv"
   backup_csv: "mbti_master_training_data_BACKUP.csv"
   batch_size: 50  # Number of rows to batch before saving
   validation_enabled: true
@@ -36,7 +36,7 @@ data:
 
 # Crawler Output Configuration
 crawlers:
-  kaggle_csv: "mbti_master_training_data.csv"
+  kaggle_csv: "mbti_cnn_metadata.csv"
 
 # Audio Analysis Configuration
 audio:

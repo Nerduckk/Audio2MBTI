@@ -14,10 +14,12 @@ cnn:
     dense_dropout: [0.3, 0.2]
 
   training:
-    batch_size: 16
-    learning_rate: 0.001
-    epochs: 20
-    early_stopping_patience: 5
+    batch_size: 32          # ↑ tăng batch size → gradient ổn định hơn
+    learning_rate: 0.0005   # ↓ giảm learning rate → học chậm, ổn định hơn
+    epochs: 50              # ↑ tăng epochs vì có đủ data
+    early_stopping_patience: 10  # ↑ tăng patience (model có thể improve lâu)
+    min_val_accuracy: 0.60
+    min_val_accuracy_epoch: 10
     test_size: 0.1
     val_size: 0.1
     random_state: 42

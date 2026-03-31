@@ -54,15 +54,31 @@ def load_playlist_ids(kaggle_dir: str) -> list[tuple[str, str]]:
 
 def load_state(state_path: Path) -> dict:
     if not state_path.exists():
-        return {"completed_playlists": []}
+        return {"completed_playlists": [], "failed_playlists": {}}
     try:
-        return json.loads(state_path.read_text(encoding="utf-8"))
+        payload = json.loads(state_path.read_text(encoding="utf-8"))
     except Exception:
-        return {"completed_playlists": []}
+        return {"completed_playlists": [], "failed_playlists": {}}
+
+    if not isinstance(payload, dict):
+        return {"completed_playlists": [], "failed_playlists": {}}
+
+    payload.setdefault("completed_playlists", [])
+    payload.setdefault("failed_playlists", {})
+    return payload
 
 
 def save_state(state_path: Path, state: dict) -> None:
     state_path.write_text(json.dumps(state, indent=2), encoding="utf-8")
+
+
+def build_state_payload(completed_playlists: set[str], failed_playlists: dict[str, dict]) -> dict:
+    return {
+        "completed_playlists": sorted(str(pid) for pid in completed_playlists),
+        "failed_playlists": {
+            str(pid): details for pid, details in sorted(failed_playlists.items(), key=lambda item: item[0])
+        },
+    }
 
 
 def normalize_track(track: dict, mbti_label: str, playlist_id: str, playlist_url: str) -> dict | None:
@@ -124,6 +140,12 @@ def mass_reprocess_kaggle_metadata(
 
     state = load_state(state_path)
     completed_playlists = set(str(pid) for pid in state.get("completed_playlists", []))
+    failed_playlists = {
+        str(pid): details
+        for pid, details in state.get("failed_playlists", {}).items()
+        if isinstance(details, dict)
+    }
+    skipped_playlists = set(completed_playlists) | set(failed_playlists)
 
     if max_playlists is not None:
         playlist_ids = playlist_ids[:max_playlists]
@@ -145,6 +167,7 @@ def mass_reprocess_kaggle_metadata(
                     completed_playlists.update(
                         df_out["playlist_id"].dropna().astype(str).unique().tolist()
                     )
+                    skipped_playlists = set(completed_playlists) | set(failed_playlists)
                 print(f"existing_metadata={len(processed_songs)}")
         except pd.errors.EmptyDataError:
             pass
@@ -166,11 +189,14 @@ def mass_reprocess_kaggle_metadata(
         df_empty.to_csv(output_csv, index=False, encoding="utf-8-sig")
 
     if resume:
-        playlist_ids = [(pid, label) for pid, label in playlist_ids if str(pid) not in completed_playlists]
+        playlist_ids = [(pid, label) for pid, label in playlist_ids if str(pid) not in skipped_playlists]
 
     spotify_scraper = SpotifyClient()
     total_playlists = len(playlist_ids)
-    print(f"playlists={total_playlists} output={output_csv} resume={'on' if resume else 'off'}")
+    print(
+        f"playlists={total_playlists} output={output_csv} resume={'on' if resume else 'off'} "
+        f"completed={len(completed_playlists)} failed={len(failed_playlists)}"
+    )
 
     for idx, (pid, mbti_label) in enumerate(playlist_ids, 1):
         try:
@@ -180,6 +206,7 @@ def mass_reprocess_kaggle_metadata(
             playlist_url = f"https://open.spotify.com/playlist/{pid}"
             tracks_data = []
             attempts = 0
+            last_error = ""
             while attempts < 3:
                 try:
                     spotify_rate_limiter.wait()
@@ -188,12 +215,23 @@ def mass_reprocess_kaggle_metadata(
                     if tracks_data:
                         break
                 except Exception as exc:
-                    print(f"  scraper_error={str(exc)[:120]}")
+                    last_error = str(exc)[:200]
+                    print(f"  scraper_error={last_error}")
                 attempts += 1
                 time.sleep(2 ** attempts)
 
             if not tracks_data:
-                print("  skipped=no_tracks")
+                failure_reason = "no_tracks"
+                if last_error:
+                    failure_reason = f"scraper_error:{last_error}"
+                failed_playlists[str(pid)] = {
+                    "mbti_label": mbti_label,
+                    "playlist_url": playlist_url,
+                    "reason": failure_reason,
+                    "attempts": attempts,
+                }
+                save_state(state_path, build_state_payload(completed_playlists, failed_playlists))
+                print(f"  skipped={failure_reason}")
                 continue
 
             if max_tracks_per_playlist is not None:
@@ -219,15 +257,22 @@ def mass_reprocess_kaggle_metadata(
 
             print(f"  new_rows={new_rows} duplicates={duplicates} saved={batch_processor.total_saved}")
             completed_playlists.add(str(pid))
-            save_state(state_path, {"completed_playlists": sorted(completed_playlists)})
+            failed_playlists.pop(str(pid), None)
+            save_state(state_path, build_state_payload(completed_playlists, failed_playlists))
             time.sleep(random.uniform(playlist_delay_min, playlist_delay_max))
         except Exception as exc:
+            failed_playlists[str(pid)] = {
+                "mbti_label": mbti_label,
+                "playlist_url": f"https://open.spotify.com/playlist/{pid}",
+                "reason": f"playlist_error:{str(exc)[:200]}",
+            }
+            save_state(state_path, build_state_payload(completed_playlists, failed_playlists))
             print(f"  playlist_error={pid} {exc}")
             time.sleep(3)
 
     batch_processor.flush()
     spotify_scraper.close()
-    save_state(state_path, {"completed_playlists": sorted(completed_playlists)})
+    save_state(state_path, build_state_payload(completed_playlists, failed_playlists))
     print(f"done saved={batch_processor.total_saved} metadata={output_csv} state={state_path}")
 
 

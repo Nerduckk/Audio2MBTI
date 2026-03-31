@@ -15,7 +15,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from ai.CNN.feature_extraction import FeatureExtractor, vector_to_mbti
 from infrastructure.config_loader import load_cnn_config
-from infrastructure.cnn_pipeline import CNNPipeline
+from pipelines.cnn_pipeline import CNNPipeline
 
 
 def build_parser() -> argparse.ArgumentParser:

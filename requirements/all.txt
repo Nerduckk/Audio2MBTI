@@ -1,0 +1,2 @@
+-r crawl.txt
+-r ai.txt

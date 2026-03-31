@@ -12,8 +12,10 @@ seaborn==0.13.2
 pillow==12.1.1
 
 # Deep Learning (Optional but included)
+# Install from the PyTorch CUDA 12.8 index so GPU-capable wheels are selected on supported machines.
+--extra-index-url https://download.pytorch.org/whl/cu128
 transformers==5.2.0
-torch==2.10.0
+torch==2.11.0+cu128
 tf-keras==2.15.0
 
 # Configuration

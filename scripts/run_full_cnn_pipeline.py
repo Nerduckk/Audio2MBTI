@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import time
 import sys
 from pathlib import Path
 
@@ -34,6 +35,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--per-label-limit", type=int, default=25)
     parser.add_argument("--total-limit", type=int, default=400)
     parser.add_argument("--duration", type=int, default=20)
+    parser.add_argument("--download-workers", type=int, default=24)
+    parser.add_argument("--ffmpeg-workers", type=int, default=8)
     parser.add_argument("--crawl-batch-size", type=int, default=20)
     parser.add_argument("--requests-per-second", type=float, default=1.0)
     parser.add_argument("--playlist-delay-min", type=float, default=0.5)
@@ -48,11 +51,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--skip-quality", action="store_true")
     parser.add_argument("--skip-train", action="store_true")
     parser.add_argument("--skip-eval", action="store_true")
+    parser.add_argument("--continuous", action="store_true")
+    parser.add_argument("--loop-sleep-seconds", type=float, default=30.0)
+    parser.add_argument("--max-runs", type=int, default=None)
+    parser.add_argument(
+        "--stop-file",
+        default=None,
+        help="Stop after the current run if this file exists. Defaults to ./outputs/stop_full_cnn_pipeline.txt in continuous mode.",
+    )
     return parser
 
 
-def main() -> None:
-    args = build_parser().parse_args()
+def run_pipeline(args: argparse.Namespace, run_index: int | None = None) -> Path:
     python_exe = sys.executable
     data_dir = Path(get_data_dir())
     cnn_config = load_cnn_config()
@@ -68,6 +78,8 @@ def main() -> None:
         outputs_dir=PROJECT_ROOT / "outputs",
         summary_prefix="pipeline_run",
     )
+    if run_index is not None:
+        runner.attach("run_index", run_index)
     runner.attach("metadata_csv", str(metadata_csv.resolve()))
 
     if not args.skip_crawl:
@@ -115,6 +127,10 @@ def main() -> None:
         str(args.total_limit),
         "--duration",
         str(args.duration),
+        "--download-workers",
+        str(args.download_workers),
+        "--ffmpeg-workers",
+        str(args.ffmpeg_workers),
         "--min-size-bytes",
         str(args.min_audio_size_bytes),
         "--cleanup-first",
@@ -221,6 +237,52 @@ def main() -> None:
     summary_path = runner.finalize()
     print("\n=== summary ===")
     print(json.dumps({**runner.summary, "summary_path": str(summary_path.resolve())}, indent=2))
+    return summary_path
+
+
+def resolve_stop_file(stop_file: str | None) -> Path:
+    if stop_file:
+        candidate = Path(stop_file)
+    else:
+        candidate = PROJECT_ROOT / "outputs" / "stop_full_cnn_pipeline.txt"
+    if not candidate.is_absolute():
+        candidate = (PROJECT_ROOT / candidate).resolve()
+    return candidate
+
+
+def main() -> None:
+    args = build_parser().parse_args()
+    if args.per_label_limit is not None and args.per_label_limit <= 0:
+        args.per_label_limit = None
+    if args.total_limit is not None and args.total_limit <= 0:
+        args.total_limit = None
+
+    if not args.continuous:
+        run_pipeline(args)
+        return
+
+    stop_file = resolve_stop_file(args.stop_file)
+    stop_file.parent.mkdir(parents=True, exist_ok=True)
+    print(f"[continuous] enabled; create {stop_file} to stop after the current run")
+
+    run_count = 0
+    while True:
+        run_count += 1
+        print(f"\n[continuous] starting run {run_count}")
+        try:
+            run_pipeline(args, run_index=run_count)
+        except Exception as exc:
+            print(f"\n[continuous] run {run_count} failed: {exc}", file=sys.stderr)
+
+        if stop_file.exists():
+            print(f"\n[continuous] stop file detected: {stop_file}")
+            break
+        if args.max_runs is not None and run_count >= args.max_runs:
+            print(f"\n[continuous] reached max runs: {args.max_runs}")
+            break
+        if args.loop_sleep_seconds > 0:
+            print(f"[continuous] sleeping {args.loop_sleep_seconds:.1f}s before next run")
+            time.sleep(args.loop_sleep_seconds)
 
 
 if __name__ == "__main__":

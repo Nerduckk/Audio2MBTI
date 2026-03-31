@@ -1,0 +1,6 @@
+-r base.txt
+
+# Crawl / collection specific
+spotipy==2.25.2
+transformers==5.2.0
+torch==2.10.0
