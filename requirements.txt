@@ -1,9 +1,35 @@
-# Compatibility entrypoint.
-# Install everything with:
-#   pip install -r requirements.txt
-#
-# Or choose a narrower profile:
-#   pip install -r requirements/crawl.txt
-#   pip install -r requirements/ai.txt
+# Core Data & ML
+pandas
+numpy
+xgboost
+scikit-learn
+joblib
+scipy
+imbalanced-learn
 
--r requirements/all.txt
+# Audio processing
+librosa
+soundfile
+ffmpeg-python
+soxr
+audioread
+
+# Networking / Scraping / Text
+requests
+beautifulsoup4
+yt-dlp
+
+# Deep learning
+torch
+torchvision
+torchaudio
+
+# Visualization & Notebooks
+matplotlib
+seaborn
+ipykernel
+
+# Config / Utilities
+python-dotenv
+PyYAML
+tqdm

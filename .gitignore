@@ -1,24 +1,106 @@
-# Ignore virtual environment
-mbti_env/
+# OS & Editors
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
 
-# Ignore caches
+# Python & Virtual Environments
 __pycache__/
-.cache/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+mbti_env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+.env
+.env.test
 
-# Ignore large datasets and model files
-data/
-models/
-outputs/
-logs/*.json
+# --- DATA EXCLUSIONS (Aggressive) ---
 
-# Ignore downloaded audio and ffmpeg binaries
-ffmpeg-master-latest-win64-gpl/
-*.mp3
-*.m4a
-*.part
+# Ignore ALL data formats globally
+*.csv
+*.json
 *.npy
 *.npz
+*.parquet
+*.h5
+*.pkl
+*.joblib
 *.pt
+*.onnx
+*.pth
+*.tflite
+*.pb
+*.manifest
+*.state
 
-# Ignore secret environment variables
-.env
+# Ignore specific massive directories in any location
+**/data/
+**/archive/
+**/outputs/
+**/results/
+**/models/
+**/checkpoint/
+**/spectrograms/
+**/audio_cache/
+**/audio_files/
+
+# Root folders
+/archive/
+/outputs/
+/data/
+
+# Specific nested data folders in 2_process
+2_process/**/data/
+2_process/**/audio_cache/
+2_process/**/audio_files/
+2_process/**/kaggle data set/
+
+# Ignore media files
+*.wav
+*.mp3
+*.m4a
+*.ogg
+*.flac
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.svg
+
+# --- Keep essential files ---
+!README.md
+!PIPELINE_GUIDE.md
+!**/logic/*.py
+!**/src/**/*.py
+!*.ipynb
+!*.py
+!*.bat
+!*.sh
+
+# Build tools
+ffmpeg-master-latest-win64-gpl/
+
+# Logs
+*.log
+error.log
