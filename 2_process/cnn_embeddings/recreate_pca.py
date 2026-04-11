@@ -14,6 +14,17 @@ sys.path.insert(0, str(PROJECT_ROOT / "3_train"))
 
 from cnn.model import AudioCNN
 
+
+def resolve_model_path() -> Path | None:
+    candidates = [
+        PROJECT_ROOT / "3_train" / "models" / "audio_cnn.pt",
+        PROJECT_ROOT / "3_train" / "models" / "sanity_check" / "audio_cnn.pt",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return None
+
 def load_config():
     config_path = PROJECT_ROOT / "3_train" / "cnn" / "config.yaml"
     with open(config_path, "r", encoding="utf-8") as f:
@@ -22,7 +33,7 @@ def load_config():
 
 def extract_embeddings(model_path, x_path, device):
     config = load_config()
-    model = AudioCNN(config)
+    model = AudioCNN.from_config(config)
     checkpoint = torch.load(model_path, map_location=device)
     model.load_state_dict(checkpoint['state_dict'])
     model.to(device)
@@ -59,16 +70,17 @@ def extract_embeddings(model_path, x_path, device):
     return np.concatenate(embeddings, axis=0)
 
 def main():
-    model_path = PROJECT_ROOT / "3_train" / "models" / "audio_cnn.pt"
+    model_path = resolve_model_path()
     x_path = str(PROJECT_ROOT / "2_process/cnn_embeddings/X_train.npy")
     pca_output_path = PROJECT_ROOT / "4_deploy" / "pipeline_models" / "cnn_pca_transformer.joblib"
     
-    if not model_path.exists():
-        print(f"Still waiting for {model_path} to be generated...")
+    if model_path is None:
+        print("Still waiting for an AudioCNN checkpoint to be generated...")
         return
         
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
+    print(f"Using checkpoint: {model_path}")
     
     try:
         embeddings = extract_embeddings(model_path, x_path, device)

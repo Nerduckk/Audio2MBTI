@@ -7,13 +7,52 @@ Cách chạy:
 """
 
 import os
-import sys
 import json
-import numpy as np
 import pandas as pd
 import joblib
+import subprocess
+from pathlib import Path
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.multioutput import MultiOutputClassifier
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+def maybe_build_cnn_pca(pipeline_dir: str) -> None:
+    pca_path = PROJECT_ROOT / pipeline_dir / "cnn_pca_transformer.joblib"
+    if pca_path.exists():
+        print(f"\nPCA transformer already exists -> {pca_path}")
+        return
+
+    checkpoint_candidates = [
+        PROJECT_ROOT / "3_train" / "models" / "audio_cnn.pt",
+        PROJECT_ROOT / "3_train" / "models" / "sanity_check" / "audio_cnn.pt",
+    ]
+    has_checkpoint = any(path.exists() for path in checkpoint_candidates)
+    x_train_path = PROJECT_ROOT / "2_process" / "cnn_embeddings" / "X_train.npy"
+    if not has_checkpoint or not x_train_path.exists():
+        print("\nSkip PCA transformer: missing AudioCNN checkpoint or X_train.npy.")
+        return
+
+    print("\nDang tao PCA transformer cho CNN embeddings...")
+    result = subprocess.run(
+        ["python", str(PROJECT_ROOT / "2_process" / "cnn_embeddings" / "recreate_pca.py")],
+        cwd=str(PROJECT_ROOT),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.stdout.strip():
+        print(result.stdout.strip())
+    if result.returncode != 0:
+        print("Tao PCA transformer that bai.")
+        if result.stderr.strip():
+            print(result.stderr.strip())
+    elif pca_path.exists():
+        print(f"PCA transformer da duoc tao -> {pca_path}")
+    else:
+        print("PCA transformer script da chay nhung khong tao ra artifact.")
 
 def main():
     print("Chuan bi Pipeline cho Inference...\n")
@@ -104,6 +143,9 @@ def main():
     with open(nlp_path, "w") as f:
         json.dump(nlp_medians, f, indent=2)
     print(f"\n💾 NLP defaults → {nlp_path}")
+
+    # ─── 6. Tạo PCA transformer cho CNN embeddings (nếu đủ artifact) ───
+    maybe_build_cnn_pca(pipeline_dir)
     
     print("\n" + "=" * 50)
     print("✅ Pipeline chuẩn bị xong! Chạy test.py để dự đoán.")

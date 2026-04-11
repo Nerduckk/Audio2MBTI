@@ -27,6 +27,7 @@ import warnings
 import tempfile
 from itertools import product
 from pathlib import Path
+import re
 
 warnings.filterwarnings("ignore")
 
@@ -35,8 +36,6 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "1_crawl" / "logic"))
 
 from youtube_process import fetch_youtube_playlist
-from spotify_process import fetch_spotify_playlist
-from apple_music_process import fetch_apple_music_playlist
 from processing_utils import analyze_audio_features, analyze_lyrics_sentiment
 from mbti_genre_processor import calculate_genre_mbti_scores
 
@@ -44,6 +43,7 @@ from mbti_genre_processor import calculate_genre_mbti_scores
 sys.path.insert(0, str(PROJECT_ROOT / "3_train"))
 from cnn.model import AudioCNN
 import torch
+import yaml
 
 
 def detect_platform(url):
@@ -65,11 +65,43 @@ def fetch_playlist_universal(url):
     if platform == "youtube":
         return fetch_youtube_playlist(url), platform
     elif platform == "spotify":
+        try:
+            from spotify_process import fetch_spotify_playlist
+        except ModuleNotFoundError as exc:
+            raise RuntimeError(
+                "Spotify support chua san sang trong environment nay. "
+                "Can cai them dependency cho spotify crawler truoc khi demo Spotify."
+            ) from exc
         return fetch_spotify_playlist(url), platform
     elif platform == "apple_music":
+        from apple_music_process import fetch_apple_music_playlist
         return fetch_apple_music_playlist(url), platform
     else:
         raise ValueError(f"Không hỗ trợ URL này. Hãy dùng YouTube, Spotify, hoặc Apple Music.")
+
+
+def find_existing_path(*candidates):
+    """Trả về path đầu tiên tồn tại."""
+    for candidate in candidates:
+        path = Path(candidate)
+        if path.exists():
+            return path
+    return None
+
+
+def normalize_text(value):
+    """Chuẩn hóa text để match title/artist từ cache."""
+    value = str(value or "").lower().strip()
+    value = re.sub(r"\([^)]*\)|\[[^\]]*\]", " ", value)
+    value = re.sub(r"feat\.?|ft\.?|official|audio|video|lyrics", " ", value)
+    value = re.sub(r"[^a-z0-9]+", "", value)
+    return value
+
+
+def clear_proxy_env():
+    """Loại bỏ proxy env lỗi để yt-dlp/requests không bị dính local proxy rác."""
+    for key in ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"]:
+        os.environ.pop(key, None)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -102,33 +134,92 @@ def extract_spectrogram(audio_path, duration=30, sr=22050):
 def download_audio(url, output_dir, title="", artist="", platform="youtube"):
     """Tải audio về thư mục tạm. Hỗ trợ YouTube trực tiếp, Spotify/Apple search YouTube."""
     import yt_dlp
-    
-    # Với Spotify/Apple Music: search YouTube bằng tên bài + nghệ sĩ
+
+    clear_proxy_env()
+    os.makedirs(output_dir, exist_ok=True)
+
     if platform in ("spotify", "apple_music"):
-        search_query = f"ytsearch1:{artist} - {title} official audio"
-        url = search_query
-    
+        url = f"ytsearch1:{artist} - {title} official audio"
+
     output_path = os.path.join(output_dir, "%(id)s.%(ext)s")
     ydl_opts = {
-        'format': 'bestaudio/best',
-        'outtmpl': output_path,
-        'quiet': True,
-        'no_warnings': True,
-        'postprocessors': [{
-            'key': 'FFmpegExtractAudio',
-            'preferredcodec': 'wav',
-            'preferredquality': '192',
+        "format": "bestaudio/best",
+        "outtmpl": output_path,
+        "quiet": False,
+        "no_warnings": False,
+        "noplaylist": True,
+        "nopart": True,
+        "default_search": "ytsearch1",
+        "postprocessors": [{
+            "key": "FFmpegExtractAudio",
+            "preferredcodec": "wav",
+            "preferredquality": "192",
         }],
     }
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
-            vid = info['id']
-            wav = os.path.join(output_dir, f"{vid}.wav")
-            if os.path.exists(wav):
-                return wav
-    except:
-        pass
+
+            if isinstance(info, dict) and info.get("entries"):
+                entries = [entry for entry in info["entries"] if entry]
+                if not entries:
+                    print("            Download error: khong tim thay ket qua YouTube phu hop")
+                    return None
+                info = entries[0]
+
+            candidate_files = []
+            video_id = info.get("id") if isinstance(info, dict) else None
+            if video_id:
+                candidate_files.extend([
+                    os.path.join(output_dir, f"{video_id}.wav"),
+                    os.path.join(output_dir, f"{video_id}.mp3"),
+                    os.path.join(output_dir, f"{video_id}.m4a"),
+                    os.path.join(output_dir, f"{video_id}.webm"),
+                ])
+
+            requested = info.get("requested_downloads") if isinstance(info, dict) else None
+            if requested:
+                for item in requested:
+                    filepath = item.get("filepath")
+                    if filepath:
+                        candidate_files.append(filepath)
+
+            for path in candidate_files:
+                if path and os.path.exists(path):
+                    root, _ = os.path.splitext(path)
+                    wav_path = f"{root}.wav"
+                    if os.path.exists(wav_path):
+                        return wav_path
+                    return path
+
+            media_files = sorted(
+                [
+                    os.path.join(output_dir, name)
+                    for name in os.listdir(output_dir)
+                    if name.lower().endswith((".wav", ".mp3", ".m4a", ".webm"))
+                ],
+                key=os.path.getmtime,
+                reverse=True,
+            )
+            if media_files:
+                return media_files[0]
+
+            print("            Download error: yt-dlp chay xong nhung khong tao file audio")
+    except Exception as e:
+        media_files = sorted(
+            [
+                os.path.join(output_dir, name)
+                for name in os.listdir(output_dir)
+                if name.lower().endswith((".wav", ".mp3", ".m4a", ".webm"))
+            ],
+            key=os.path.getmtime,
+            reverse=True,
+        )
+        for path in media_files:
+            if path.lower().endswith(".wav") and os.path.exists(path):
+                print(f"            Download warning: {e} (nhung da co file wav, se tiep tuc)")
+                return path
+        print(f"            Download error: {e}")
     return None
 
 
@@ -173,36 +264,143 @@ class MBTIPredictor:
             with open(median_path, "r") as f:
                 self.medians = json.load(f)
 
+        self.song_feature_cache = None
+        self.playlist_feature_cache = None
+        self.sample_to_playlist = None
+        self._load_feature_caches()
+
         # Load CNN & PCA
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.cnn_model = None
         self.pca = None
 
-        cnn_path = os.path.join(model_dir, "audio_cnn.pt")
-        pca_path = os.path.join(pipeline_dir, "cnn_pca_transformer.joblib")
+        cnn_path = find_existing_path(
+            PROJECT_ROOT / model_dir / "audio_cnn.pt",
+            PROJECT_ROOT / model_dir / "sanity_check" / "audio_cnn.pt",
+        )
+        pca_path = find_existing_path(
+            PROJECT_ROOT / pipeline_dir / "cnn_pca_transformer.joblib",
+        )
 
-        if os.path.exists(cnn_path):
+        if cnn_path is not None:
             try:
-                # Load CNN config
-                with open(os.path.join(PROJECT_ROOT, "3_train/cnn/config.yaml"), "r") as f:
-                    import yaml
+                with open(PROJECT_ROOT / "3_train" / "cnn" / "config.yaml", "r", encoding="utf-8") as f:
                     cfg = yaml.safe_load(f).get("cnn", {})
-                self.cnn_model = AudioCNN(cfg)
+                self.cnn_model = AudioCNN.from_config(cfg)
                 ckpt = torch.load(cnn_path, map_location=self.device)
                 self.cnn_model.load_state_dict(ckpt["state_dict"])
                 self.cnn_model.to(self.device)
                 self.cnn_model.eval()
-                print("Da tai AudioCNN model.")
+                print(f"Da tai AudioCNN model: {cnn_path}")
             except Exception as e:
                 print(f"Loi tai AudioCNN: {e}")
 
-        if os.path.exists(pca_path):
+        if pca_path is not None:
             self.pca = joblib.load(pca_path)
-            print("Da tai PCA Transformer.")
+            print(f"Da tai PCA Transformer: {pca_path}")
+        elif self.cnn_model is not None:
+            print("Khong tim thay PCA transformer, se fallback bang feature median cho cnn_pca_*.")
 
         print("Da tai 4 mo hinh XGBoost + Vibe Classifier + Genre Lookup.")
         for dim, acc in self.meta["accuracy"].items():
             print(f"   {dim}: {acc:.2%}")
+
+    def _load_feature_caches(self):
+        """Load các cache local để ưu tiên dự đoán không cần download."""
+        playlist_cache_path = PROJECT_ROOT / "2_process" / "playlist_hybrid_features.csv"
+        song_cache_path = PROJECT_ROOT / "2_process" / "artist_svd" / "mbti_final_metadata_nlp.csv"
+        mapping_path = PROJECT_ROOT / "2_process" / "sample_to_playlist.csv"
+
+        if playlist_cache_path.exists():
+            try:
+                self.playlist_feature_cache = pd.read_csv(playlist_cache_path)
+            except Exception as e:
+                print(f"Loi load playlist cache: {e}")
+
+        if mapping_path.exists():
+            try:
+                self.sample_to_playlist = pd.read_csv(mapping_path)
+            except Exception as e:
+                print(f"Loi load sample_to_playlist: {e}")
+
+        if song_cache_path.exists():
+            try:
+                df = pd.read_csv(song_cache_path)
+                df["title_key"] = df.get("title_norm", df["title"]).apply(normalize_text)
+                df["artist_key"] = df.get("artist_norm", df["artists"]).apply(normalize_text)
+                self.song_feature_cache = df
+            except Exception as e:
+                print(f"Loi load song cache: {e}")
+
+    def get_cached_playlist_vector(self, playlist_data):
+        """Ưu tiên playlist cache theo playlist_id, sau đó fallback sang match từng bài."""
+        playlist_id = playlist_data.get("playlist_id")
+        if self.playlist_feature_cache is not None and playlist_id:
+            cached = self.playlist_feature_cache[self.playlist_feature_cache["playlist"] == playlist_id]
+            if not cached.empty:
+                row = cached.iloc[0]
+                vector = row[self.feature_names].to_numpy(dtype=float).reshape(1, -1)
+                matched_count = None
+                if self.sample_to_playlist is not None:
+                    matched_count = int((self.sample_to_playlist["playlist"] == playlist_id).sum())
+                return vector, {
+                    "mode": "playlist_id",
+                    "playlist_id": playlist_id,
+                    "matched_tracks": matched_count,
+                }
+
+        matched_features = self.match_tracks_from_cache(playlist_data.get("tracks", []))
+        if len(matched_features) >= 2:
+            vector = self.build_feature_vector(matched_features)
+            return vector, {
+                "mode": "track_cache",
+                "matched_tracks": len(matched_features),
+                "requested_tracks": len(playlist_data.get("tracks", [])),
+            }
+        return None, None
+
+    def match_tracks_from_cache(self, tracks):
+        """Match track list vào local song feature cache."""
+        if self.song_feature_cache is None:
+            return []
+
+        matched = []
+        used_indices = set()
+        for track in tracks:
+            title_key = normalize_text(track.get("title", ""))
+            artist_key = normalize_text(track.get("artists_text", ""))
+            if not title_key:
+                continue
+
+            candidates = self.song_feature_cache[self.song_feature_cache["title_key"] == title_key]
+            if artist_key:
+                exact_artist = candidates[candidates["artist_key"] == artist_key]
+                if not exact_artist.empty:
+                    candidates = exact_artist
+                else:
+                    fuzzy_artist = candidates[
+                        candidates["artist_key"].fillna("").apply(
+                            lambda value: artist_key in value or value in artist_key
+                        )
+                    ]
+                    if not fuzzy_artist.empty:
+                        candidates = fuzzy_artist
+
+            if candidates.empty:
+                continue
+
+            selected_index = None
+            for idx in candidates.index:
+                if idx not in used_indices:
+                    selected_index = idx
+                    break
+            if selected_index is None:
+                continue
+
+            used_indices.add(selected_index)
+            row = self.song_feature_cache.loc[selected_index]
+            matched.append({fname: row.get(fname, self.medians.get(fname, 0.0)) for fname in self.feature_names})
+        return matched
 
     def predict_vibes(self, audio_feat):
         """Dự đoán 12 vibe flags từ audio features."""
@@ -280,10 +478,31 @@ class MBTIPredictor:
             print("Playlist trong!")
             return None, None
 
+        cached_vector, cache_info = self.get_cached_playlist_vector(playlist_data)
+        if cached_vector is not None:
+            print("\n[Stage 2/4] Tim thay du lieu cache local, bo qua download/audio extraction.")
+            if cache_info["mode"] == "playlist_id":
+                print(f"   Cache hit theo playlist_id: {cache_info['playlist_id']}")
+            else:
+                print(
+                    f"   Cache hit theo track match: {cache_info['matched_tracks']}/"
+                    f"{cache_info['requested_tracks']} bai"
+                )
+            vector = cached_vector
+            print("\n[Stage 3/4] Da dung Playlist Signature tu cache.")
+            print("\n[Stage 4/4] Du doan MBTI...")
+            probs = {}
+            for dim, model in self.models.items():
+                probs[dim] = model.predict_proba(vector)[0][1]
+            top3 = self.compute_top3_mbti(probs)
+            return top3, probs
+
         # ─── Stage 2-3: Download + Extract Features ───
         print(f"\n[Stage 2/4] Download audio + trich xuat dac trung...")
         all_track_features = []
-        with tempfile.TemporaryDirectory() as tmp_dir:
+        temp_root = PROJECT_ROOT / "4_deploy" / "_tmp_audio"
+        temp_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=temp_root) as tmp_dir:
             for i, track in enumerate(tracks):
                 title = track.get("title", "?")
                 artist = track.get("artists_text", "Unknown")
@@ -415,16 +634,16 @@ def main():
     print("    YouTube | Spotify | Apple Music → Top 3 MBTI")
     print("=" * 60)
 
-    if len(sys.argv) < 2:
-        print("\nVui long nhap URL Playlist (YouTube / Spotify / Apple Music).")
-        print("   python 4_deploy/test.py <playlist_url>")
-        print("\n   Ví dụ:")
-        print('   python 4_deploy/test.py "https://www.youtube.com/playlist?list=PLxxxxxx"')
-        print('   python 4_deploy/test.py "https://open.spotify.com/playlist/xxxxxx"')
-        print('   python 4_deploy/test.py "https://music.apple.com/playlist/xxxxxx"')
-        return
+    if len(sys.argv) >= 2:
+        url = sys.argv[1].strip()
+    else:
+        print("\nNhap URL Playlist (YouTube / Spotify / Apple Music).")
+        print("Nhan Enter neu muon paste truc tiep trong terminal.\n")
+        url = input("Playlist URL: ").strip()
+        if not url:
+            print("\nKhong co URL de xu ly.")
+            return
 
-    url = sys.argv[1]
     predictor = MBTIPredictor()
     top3, probs = predictor.predict_playlist(url)
 
