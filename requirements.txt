@@ -14,10 +14,13 @@ ffmpeg-python
 soxr
 audioread
 
-# Networking / Scraping / Text
+# Networking / Scraping / Text / NLP
 requests
 beautifulsoup4
 yt-dlp
+syncedlyrics
+deep-translator
+transformers
 
 # Deep learning
 torch

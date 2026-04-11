@@ -34,7 +34,7 @@ share/python-wheels/
 MANIFEST
 .env
 .env.test
-
+venv_gpu/
 # --- DATA EXCLUSIONS (Aggressive) ---
 
 # Ignore ALL data formats globally
@@ -91,6 +91,7 @@ MANIFEST
 # --- Keep essential files ---
 !README.md
 !PIPELINE_GUIDE.md
+!DEMO_PIPELINE.md
 !**/logic/*.py
 !**/src/**/*.py
 !*.ipynb

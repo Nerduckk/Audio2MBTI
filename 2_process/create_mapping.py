@@ -2,7 +2,7 @@ import pandas as pd
 import os
 
 def main():
-    print("🔄 Đang tạo ánh xạ Track -> Playlist (Fixing mapping)...")
+    print("Dang tao anh xa Track -> Playlist (Fixing mapping)...")
     data_dir = "2_process"
     input_path = os.path.join(data_dir, "mbti_cnn_metadata.csv")
     output_path = os.path.join(data_dir, "sample_to_playlist.csv")
@@ -12,7 +12,7 @@ def main():
     
     # Based on binary inspection:
     # 0: Title, 1: Artist, 2: Label, 9: Playlist ID
-    print(f"   📊 Đã đọc {len(df)} dòng dữ liệu thô.")
+    print(f"   Da doc {len(df)} dong du lieu tho.")
     
     mapping = df[[0, 1, 2, 9]].dropna()
     mapping.columns = ['title', 'artists', 'label', 'playlist']
@@ -22,10 +22,10 @@ def main():
     mapping['artists'] = mapping['artists'].str.strip()
     mapping['playlist'] = mapping['playlist'].str.strip()
     
-    print(f"   ✅ Khớp thành công {len(mapping)} bài hát vào {mapping['playlist'].nunique()} playlists.")
+    print(f"   Khop thanh cong {len(mapping)} bai hat vao {mapping['playlist'].nunique()} playlists.")
     
     mapping.to_csv(output_path, index=False)
-    print(f"   💾 Đã lưu ánh xạ tại: {output_path}")
+    print(f"   Da luu anh xa tai: {output_path}")
 
 if __name__ == "__main__":
     main()
