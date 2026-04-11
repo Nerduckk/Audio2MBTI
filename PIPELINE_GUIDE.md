@@ -77,4 +77,3 @@ Bạn có thể điều chỉnh tại `3_train/cnn/config.yaml` cho CNN và `3_t
 - **Dữ liệu trống:** Kiểm tra file `2_process/cnn_embeddings/train_manifest.json` xem đã được tạo sau khi process chưa.
 
 ---
-*Duy trì bởi Nerduckk & Antigravity (Advanced Agentic Coding).*
