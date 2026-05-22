@@ -1,22 +1,22 @@
+# -*- coding: utf-8 -*-
 """
-MBTI Music Intelligence Predictor — Full Pipeline
-Dự đoán Top 3 MBTI từ YouTube Playlist.
+MBTI Music Intelligence Predictor --- Full Pipeline
+Du doan Top 3 MBTI tu YouTube Playlist.
 
-Pipeline đầy đủ:
+Pipeline day du:
   1. Crawl playlist metadata          (1_crawl/logic/youtube_process.py)
-  2. Download audio + trích xuất       (1_crawl/logic/processing_utils.py)
+  2. Download audio + trich xuat       (1_crawl/logic/processing_utils.py)
   3. NLP: lyrics sentiment             (syncedlyrics + HuggingFace)
-  4. Genre → MBTI scores               (1_crawl/logic/mbti_genre_processor.py)
+  4. Genre -> MBTI scores               (1_crawl/logic/mbti_genre_processor.py)
   5. Vibe classifier                   (4_deploy/pipeline_models/vibe_classifier.joblib)
   6. CNN substitute: mel-spectrogram   (librosa 64-band)
-  7. Mean-pooling → XGBoost predict    (3_train/models/hybrid_playlist_*.json)
+  7. Mean-pooling -> XGBoost predict    (3_train/models/hybrid_playlist_*.json)
 
-Cách chạy:
-    python 4_deploy/test.py <youtube_playlist_url>
 """
 
 import os
 import sys
+import io
 import json
 import numpy as np
 import pandas as pd
@@ -31,7 +31,12 @@ import re
 
 warnings.filterwarnings("ignore")
 
-# Thêm path để import các module của project
+# Handle UTF-8 output on Windows
+if sys.platform == "win32":
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+
+# Them path de import cac module cua project
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "1_crawl" / "logic"))
 
@@ -104,9 +109,9 @@ def clear_proxy_env():
         os.environ.pop(key, None)
 
 
-# ═══════════════════════════════════════════════════════════════
+# ===================================================================
 # AUDIO DOWNLOAD
-# ═══════════════════════════════════════════════════════════════
+# ===================================================================
 
 def extract_spectrogram(audio_path, duration=30, sr=22050):
     """Trích xuất log-mel spectrogram (128x1290) chuẩn cho CNN."""
@@ -225,12 +230,16 @@ def download_audio(url, output_dir, title="", artist="", platform="youtube"):
 
 
 
-# ═══════════════════════════════════════════════════════════════
+# ===================================================================
 # MBTI PREDICTOR
-# ═══════════════════════════════════════════════════════════════
+# ===================================================================
 
 class MBTIPredictor:
     def __init__(self, model_dir="3_train/models", pipeline_dir="4_deploy/pipeline_models"):
+        # Convert relative paths to absolute using PROJECT_ROOT
+        model_dir = PROJECT_ROOT / model_dir
+        pipeline_dir = PROJECT_ROOT / pipeline_dir
+        
         # Load XGBoost models
         meta_path = os.path.join(model_dir, "hybrid_playlist_meta.json")
         with open(meta_path, "r", encoding="utf-8") as f:
@@ -460,10 +469,10 @@ class MBTIPredictor:
         return sorted(scores.items(), key=lambda x: x[1], reverse=True)[:3]
 
     def predict_playlist(self, playlist_url, max_tracks=15):
-        """Full Pipeline: YouTube URL → Top 3 MBTI."""
+        """Full Pipeline: YouTube URL -> Top 3 MBTI."""
         print(f"\nDang xu ly: {playlist_url}")
 
-        # ─── Stage 1: Crawl (YouTube / Spotify / Apple Music) ───
+        # --- Stage 1: Crawl (YouTube / Spotify / Apple Music) ---
         print("\n[Stage 1/4] Crawl playlist metadata...")
         try:
             playlist_data, platform = fetch_playlist_universal(playlist_url)
@@ -497,7 +506,7 @@ class MBTIPredictor:
             top3 = self.compute_top3_mbti(probs)
             return top3, probs
 
-        # ─── Stage 2-3: Download + Extract Features ───
+        # --- Stage 2-3: Download + Extract Features ---
         print(f"\n[Stage 2/4] Download audio + trich xuat dac trung...")
         all_track_features = []
         temp_root = PROJECT_ROOT / "4_deploy" / "_tmp_audio"
@@ -587,7 +596,7 @@ class MBTIPredictor:
             print("\nKhong du bai hat de phan tich.")
             return None, None
 
-        # ─── Stage 4: Predict ───
+        # --- Stage 4: Predict ---
         print(f"\n[Stage 3/4] Tong hop {len(all_track_features)} bai -> Playlist Signature...")
         vector = self.build_feature_vector(all_track_features)
 
@@ -599,10 +608,41 @@ class MBTIPredictor:
         top3 = self.compute_top3_mbti(probs)
         return top3, probs
 
+    def predict_to_dict(self, playlist_url, max_tracks=15):
+        """Hàm API: Chạy dự đoán và trả về dictionary chuẩn JSON"""
+        top3, probs = self.predict_playlist(playlist_url, max_tracks)
+        
+        if top3 is None or probs is None:
+            raise ValueError("Không thể phân tích playlist này (có thể do lỗi link hoặc danh sách rỗng).")
 
-# ═══════════════════════════════════════════════════════════════
+        # 1. Format mảng Top 3 (Thêm float() để ép kiểu numpy.float32 -> float)
+        top3_formatted = []
+        for mbti_type, score in top3:
+            top3_formatted.append({
+                "mbti": mbti_type,
+                "percent": round(float(score) * 100, 1),
+                "label": MBTI_DESC.get(mbti_type, "") 
+            })
+
+        # 2. Format Traits (Thêm float() để ép kiểu)
+        traits = {
+            "E": round((1 - float(probs["E_I"])) * 100, 1),
+            "I": round(float(probs["E_I"]) * 100, 1),
+            "S": round((1 - float(probs["S_N"])) * 100, 1),
+            "N": round(float(probs["S_N"]) * 100, 1),
+            "T": round((1 - float(probs["T_F"])) * 100, 1),
+            "F": round(float(probs["T_F"]) * 100, 1),
+            "J": round((1 - float(probs["J_P"])) * 100, 1),
+            "P": round(float(probs["J_P"]) * 100, 1)
+        }
+
+        return {
+            "top3": top3_formatted,
+            "traits": traits
+        }
+# ===================================================================
 # MBTI DESCRIPTIONS
-# ═══════════════════════════════════════════════════════════════
+# ===================================================================
 
 MBTI_DESC = {
     "ISTJ": "Người quản lý – Thực tế, đáng tin cậy.",
@@ -624,14 +664,14 @@ MBTI_DESC = {
 }
 
 
-# ═══════════════════════════════════════════════════════════════
+# ===================================================================
 # MAIN
-# ═══════════════════════════════════════════════════════════════
+# ===================================================================
 
 def main():
     print("\n" + "=" * 60)
     print("MBTI MUSIC INTELLIGENCE PREDICTOR")
-    print("    YouTube | Spotify | Apple Music → Top 3 MBTI")
+    print("    YouTube | Spotify | Apple Music -> Top 3 MBTI")
     print("=" * 60)
 
     if len(sys.argv) >= 2:
@@ -651,15 +691,15 @@ def main():
         print("\nKhong the du doan.")
         return
 
-    # ─── Hiển thị kết quả ───
+    # --- Hien thi ket qua ---
     print("\n" + "=" * 60)
-    print("KET QUA DU DOAN MBTI — TOP 3")
+    print("KET QUA DU DOAN MBTI - TOP 3")
     print("=" * 60)
 
     medals = ["#1", "#2", "#3"]
     for i, (mbti_type, score) in enumerate(top3):
         desc = MBTI_DESC.get(mbti_type, "")
-        bar = "█" * int(score * 40) + "░" * (40 - int(score * 40))
+        bar = "#" * int(score * 40) + "-" * (40 - int(score * 40))
         print(f"\n  {medals[i]} #{i+1}: {mbti_type}  ({score:.1%})")
         print(f"       {bar}")
         print(f"       {desc}")

@@ -1,0 +1,28 @@
+@import "tailwindcss";
+
+@theme {
+  --color-mistral-bg: #fffaeb;
+  --color-mistral-surface: #fff0c2;
+  --color-mistral-black: #1f1f1f;
+  --color-mistral-yellow: #ffd900;
+  --color-mistral-amber: #ffa110;
+  --color-mistral-orange: #fa520f;
+  
+  --shadow-golden: -8px 16px 39px rgba(127, 99, 21, 0.12);
+  --font-sans: Arial, Helvetica, sans-serif;
+}
+
+body {
+  background-color: var(--color-mistral-bg);
+  color: var(--color-mistral-black);
+}
+
+/* Hiệu ứng bay lên và xoay tròn cho các khối dữ liệu */
+@keyframes floatUp {
+  0% {
+    transform: translateY(100px) rotate(0deg);
+  }
+  100% {
+    transform: translateY(-100vh) rotate(720deg);
+  }
+}
