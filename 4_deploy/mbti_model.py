@@ -278,6 +278,17 @@ class MBTIPredictor:
         self.sample_to_playlist = None
         self._load_feature_caches()
 
+        # Load persistent track features cache
+        self.downloaded_tracks_cache_path = PROJECT_ROOT / "2_process" / "downloaded_tracks_features_cache.json"
+        self.downloaded_tracks_cache = {}
+        if self.downloaded_tracks_cache_path.exists():
+            try:
+                with open(self.downloaded_tracks_cache_path, "r", encoding="utf-8") as f:
+                    self.downloaded_tracks_cache = json.load(f)
+                print(f"Da tai {len(self.downloaded_tracks_cache)} bai hat tu cache vat ly.")
+            except Exception as e:
+                print(f"Loi load downloaded_tracks_features_cache.json: {e}")
+
         # Load CNN & PCA
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.cnn_model = None
@@ -505,86 +516,117 @@ class MBTIPredictor:
         all_track_features = []
         temp_root = PROJECT_ROOT / "4_deploy" / "_tmp_audio"
         temp_root.mkdir(parents=True, exist_ok=True)
-        with tempfile.TemporaryDirectory(dir=temp_root) as tmp_dir:
-            for i, track in enumerate(tracks):
-                title = track.get("title", "?")
-                artist = track.get("artists_text", "Unknown")
-                url = track.get("external_url", "")
-                print(f"   [{i+1}/{len(tracks)}] {artist} - {title}")
+        
+        tracks_to_process = []
+        for i, track in enumerate(tracks):
+            title = track.get("title", "?")
+            artist = track.get("artists_text", "Unknown")
+            title_key = normalize_text(title)
+            artist_key = normalize_text(artist)
+            cache_key = f"{artist_key}_{title_key}"
+            
+            if cache_key in self.downloaded_tracks_cache:
+                print(f"   [{i+1}/{len(tracks)}] [Cache Hit] {artist} - {title} (bo qua download)")
+                all_track_features.append(self.downloaded_tracks_cache[cache_key])
+            else:
+                tracks_to_process.append((i, track))
+                
+        if tracks_to_process:
+            has_new_downloads = False
+            with tempfile.TemporaryDirectory(dir=temp_root) as tmp_dir:
+                for idx, (original_idx, track) in enumerate(tracks_to_process):
+                    title = track.get("title", "?")
+                    artist = track.get("artists_text", "Unknown")
+                    url = track.get("external_url", "")
+                    title_key = normalize_text(title)
+                    artist_key = normalize_text(artist)
+                    cache_key = f"{artist_key}_{title_key}"
+                    
+                    print(f"   [{original_idx+1}/{len(tracks)}] Download/Process: {artist} - {title}")
+                    feat = {}
 
-                feat = {}
+                    # 2a. Download + Audio features
+                    wav_path = download_audio(url, tmp_dir, title=title, artist=artist, platform=platform) if (url or title) else None
+                    if wav_path and os.path.exists(wav_path):
+                        audio_feat = analyze_audio_features(wav_path)
+                        if audio_feat:
+                            feat.update(audio_feat)
+                            # Tính thêm spectral_complex_ratio (model cần)
+                            if "spectral_complex_ratio" not in feat:
+                                sc = feat.get("spectral_centroid", 0)
+                                sb = feat.get("spectral_bandwidth", 1)
+                                feat["spectral_complex_ratio"] = sc / sb if sb else 0
 
-                # 2a. Download + Audio features
-                wav_path = download_audio(url, tmp_dir, title=title, artist=artist, platform=platform) if (url or title) else None
-                if wav_path and os.path.exists(wav_path):
-                    audio_feat = analyze_audio_features(wav_path)
-                    if audio_feat:
-                        feat.update(audio_feat)
-                        # Tính thêm spectral_complex_ratio (model cần)
-                        if "spectral_complex_ratio" not in feat:
-                            sc = feat.get("spectral_centroid", 0)
-                            sb = feat.get("spectral_bandwidth", 1)
-                            feat["spectral_complex_ratio"] = sc / sb if sb else 0
-
-                        print(f"            Audio (tempo={feat.get('tempo_bpm', 0):.0f} BPM)")
+                            print(f"            Audio (tempo={feat.get('tempo_bpm', 0):.0f} BPM)")
+                        else:
+                            print(f"            Audio extraction failed")
                     else:
-                        print(f"            Audio extraction failed")
-                else:
-                    print(f"            Download failed")
+                        print(f"            Download failed")
 
-                # 2c. NLP: Lyrics sentiment
-                try:
-                    nlp = analyze_lyrics_sentiment(title, artist)
-                    feat["lyrics_polarity"] = nlp.get("lyrics_polarity", 0)
-                    print(f"            NLP (polarity={feat['lyrics_polarity']:.2f})")
-                except:
-                    print(f"            NLP skipped")
+                    # 2c. NLP: Lyrics sentiment
+                    try:
+                        nlp = analyze_lyrics_sentiment(title, artist)
+                        feat["lyrics_polarity"] = nlp.get("lyrics_polarity", 0)
+                        print(f"            NLP (polarity={feat['lyrics_polarity']:.2f})")
+                    except:
+                        print(f"            NLP skipped")
 
-                # 2d. Genre → MBTI scores
-                genre_data = self.lookup_genre_scores(artist)
-                if genre_data:
-                    feat.update(genre_data)
-                    print(f"            Genre scores (from lookup)")
-                else:
-                    # Fallback: dùng title keywords để estimate genre
-                    keywords = (title + " " + artist).lower().split()
-                    genre_scores = calculate_genre_mbti_scores(keywords)
-                    feat["genre_ei_score"] = genre_scores.get("genre_ei", 0.5)
-                    feat["genre_sn_score"] = genre_scores.get("genre_sn", 0.5)
-                    feat["genre_tf_score"] = genre_scores.get("genre_tf", 0.5)
+                    # 2d. Genre → MBTI scores
+                    genre_data = self.lookup_genre_scores(artist)
+                    if genre_data:
+                        feat.update(genre_data)
+                        print(f"            Genre scores (from lookup)")
+                    else:
+                        # Fallback: dùng title keywords để estimate genre
+                        keywords = (title + " " + artist).lower().split()
+                        genre_scores = calculate_genre_mbti_scores(keywords)
+                        feat["genre_ei_score"] = genre_scores.get("genre_ei", 0.5)
+                        feat["genre_sn_score"] = genre_scores.get("genre_sn", 0.5)
+                        feat["genre_tf_score"] = genre_scores.get("genre_tf", 0.5)
 
-                # 2e. Vibe prediction
-                vibes = self.predict_vibes(feat)
-                if vibes:
-                    feat.update(vibes)
-                    vibe_sum = sum(vibes.values())
-                    feat["vibe_cluster"] = vibe_sum % 12  # Simple cluster
-                    print(f"            Vibes ({vibe_sum} active flags)")
+                    # 2e. Vibe prediction
+                    vibes = self.predict_vibes(feat)
+                    if vibes:
+                        feat.update(vibes)
+                        vibe_sum = sum(vibes.values())
+                        feat["vibe_cluster"] = vibe_sum % 12  # Simple cluster
+                        print(f"            Vibes ({vibe_sum} active flags)")
 
-                # 2f. CNN Embeddings (The "Secret Sauce")
-                if self.cnn_model and self.pca and wav_path:
-                    spec = extract_spectrogram(wav_path)
-                    if spec is not None:
-                        with torch.no_grad():
-                            spec_t = torch.from_numpy(spec).float().to(self.device)
-                            # Extract embedding (before final MLP)
-                            if hasattr(self.cnn_model, "extract_features"):
-                                emb = self.cnn_model.extract_features(spec_t)
-                            else:
-                                # Fallback: forward pass until flattening
-                                x = self.cnn_model.features(spec_t)
-                                x = self.cnn_model.pool(x)
-                                emb = torch.flatten(x, 1)
-                            
-                            emb_np = emb.cpu().numpy()
-                            pca_feat = self.pca.transform(emb_np)[0]
-                            
-                            for k in range(64):
-                                feat[f"cnn_pca_{k}"] = float(pca_feat[k])
-                            print(f"            CNN Embeddings (64D PCA)")
+                    # 2f. CNN Embeddings (The "Secret Sauce")
+                    if self.cnn_model and self.pca and wav_path:
+                        spec = extract_spectrogram(wav_path)
+                        if spec is not None:
+                            with torch.no_grad():
+                                spec_t = torch.from_numpy(spec).float().to(self.device)
+                                # Extract embedding (before final MLP)
+                                if hasattr(self.cnn_model, "extract_features"):
+                                    emb = self.cnn_model.extract_features(spec_t)
+                                else:
+                                    # Fallback: forward pass until flattening
+                                    x = self.cnn_model.features(spec_t)
+                                    x = self.cnn_model.pool(x)
+                                    emb = torch.flatten(x, 1)
+                                
+                                emb_np = emb.cpu().numpy()
+                                pca_feat = self.pca.transform(emb_np)[0]
+                                
+                                for k in range(64):
+                                    feat[f"cnn_pca_{k}"] = float(pca_feat[k])
+                                print(f"            CNN Embeddings (64D PCA)")
 
-                if feat:
-                    all_track_features.append(feat)
+                    if feat:
+                        all_track_features.append(feat)
+                        self.downloaded_tracks_cache[cache_key] = feat
+                        
+                        # Save cache atomically immediately to prevent loss if interrupted
+                        try:
+                            temp_cache_file = self.downloaded_tracks_cache_path.with_suffix(".tmp")
+                            with open(temp_cache_file, "w", encoding="utf-8") as f:
+                                json.dump(self.downloaded_tracks_cache, f, indent=4)
+                            os.replace(temp_cache_file, self.downloaded_tracks_cache_path)
+                            print(f"            [Cache Saved] {artist} - {title}")
+                        except Exception as e:
+                            print(f"            Loi ghi cache: {e}")
 
         if len(all_track_features) < 2:
             print("\nKhong du bai hat de phan tich.")
