@@ -105,3 +105,13 @@ ffmpeg-master-latest-win64-gpl/
 # Logs
 *.log
 error.log
+
+# Keep trained models and pipeline assets for deploy
+!4_deploy/pipeline_models/cnn_pca_transformer.joblib
+!4_deploy/pipeline_models/vibe_classifier.joblib
+!4_deploy/pipeline_models/genre_lookup.json
+!4_deploy/pipeline_models/nlp_defaults.json
+!4_deploy/pipeline_models/feature_medians.json
+!3_train/models/hybrid_playlist_*.json
+!3_train/models/hybrid_playlist_meta.json
+!3_train/models/audio_cnn.pt

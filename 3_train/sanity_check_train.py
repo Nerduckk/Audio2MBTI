@@ -41,19 +41,23 @@ def main():
     
     trainer = ModelTrainer(config)
     
-    # Manual data loading for just 10 samples
-    print("Loading tiny subset...")
-    X_full = np.load(x_path, mmap_mode='r')
-    y_full = np.load(y_path).astype(np.float32)
-    
-    X_tiny = X_full[:10]
-    y_tiny = y_full[:10]
-    
-    # Save tiny versions to new test directory
     tiny_x_path = str(PROJECT_ROOT / "2_process/tests/X_tiny.npy")
     tiny_y_path = str(PROJECT_ROOT / "2_process/tests/y_tiny.npy")
-    np.save(tiny_x_path, X_tiny)
-    np.save(tiny_y_path, y_tiny)
+    
+    if not Path(x_path).exists() or not Path(y_path).exists():
+        print("Full datasets not found. Using pre-existing tiny subset from tests folder...")
+        if not Path(tiny_x_path).exists() or not Path(tiny_y_path).exists():
+            print("❌ Pre-existing tiny subset not found! Sanity check cannot run.")
+            return
+    else:
+        print("Loading tiny subset from full dataset...")
+        X_full = np.load(x_path, mmap_mode='r')
+        y_full = np.load(y_path).astype(np.float32)
+        X_tiny = X_full[:10]
+        y_tiny = y_full[:10]
+        Path(tiny_x_path).parent.mkdir(parents=True, exist_ok=True)
+        np.save(tiny_x_path, X_tiny)
+        np.save(tiny_y_path, y_tiny)
     
     print("Running trainer...")
     try:

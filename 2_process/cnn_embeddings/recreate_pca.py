@@ -74,6 +74,25 @@ def main():
     x_path = str(PROJECT_ROOT / "2_process/cnn_embeddings/X_train.npy")
     pca_output_path = PROJECT_ROOT / "4_deploy" / "pipeline_models" / "cnn_pca_transformer.joblib"
     
+    # Ưu tiên load cnn_embeddings.npy có sẵn để bypass bước forward pass cực nặng và file 13GB X_train.npy
+    embeddings_path = PROJECT_ROOT / "2_process" / "cnn_embeddings" / "cnn_embeddings.npy"
+    if embeddings_path.exists():
+        print(f"\n=> Found cnn_embeddings.npy at {embeddings_path}!")
+        try:
+            print("Loading cnn_embeddings.npy directly...")
+            embeddings = np.load(embeddings_path)
+            print(f"Fitting PCA(n_components=64) on {embeddings.shape} matrix directly...")
+            pca = PCA(n_components=64)
+            pca.fit(embeddings)
+            
+            # Create output dir if not exist
+            Path(pca_output_path).parent.mkdir(parents=True, exist_ok=True)
+            joblib.dump(pca, pca_output_path)
+            print(f"PCA transformer created successfully -> {pca_output_path}")
+            return
+        except Exception as e:
+            print(f"Error loading cnn_embeddings.npy: {e}. Falling back to model extraction...")
+            
     if model_path is None:
         print("Still waiting for an AudioCNN checkpoint to be generated...")
         return
