@@ -358,16 +358,8 @@ class MBTIPredictor:
                     "matched_tracks": matched_count,
                 }
 
-        matched_features = self.match_tracks_from_cache(playlist_data.get("tracks", []))
-        total_tracks = len(playlist_data.get("tracks", []))
-        required_matches = min(12, max(5, int(total_tracks * 0.6)))
-        if len(matched_features) >= min(required_matches, total_tracks):
-            vector = self.build_feature_vector(matched_features)
-            return vector, {
-                "mode": "track_cache",
-                "matched_tracks": len(matched_features),
-                "requested_tracks": total_tracks,
-            }
+        # Disable track_cache fallback because individual song cache lacks CNN PCA features,
+        # which would cause them to default to flat medians and make the model blind.
         return None, None
 
     def match_tracks_from_cache(self, tracks):
