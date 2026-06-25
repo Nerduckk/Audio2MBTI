@@ -450,10 +450,10 @@ class MBTIPredictor:
     def compute_top3_mbti(self, probs):
         """Tính xác suất 16 loại MBTI, trả top 3."""
         dims = [
-            ("E", "I", probs["E_I"]),
-            ("S", "N", probs["S_N"]),
-            ("T", "F", probs["T_F"]),
-            ("J", "P", probs["J_P"]),
+            ("I", "E", probs["E_I"]),
+            ("N", "S", probs["S_N"]),
+            ("F", "T", probs["T_F"]),
+            ("P", "J", probs["J_P"]),
         ]
         scores = {}
         for combo in product(*[(d[0], d[1]) for d in dims]):
@@ -626,14 +626,14 @@ class MBTIPredictor:
 
         # 2. Format Traits (Thêm float() để ép kiểu)
         traits = {
-            "E": round((1 - float(probs["E_I"])) * 100, 1),
-            "I": round(float(probs["E_I"]) * 100, 1),
-            "S": round((1 - float(probs["S_N"])) * 100, 1),
-            "N": round(float(probs["S_N"]) * 100, 1),
-            "T": round((1 - float(probs["T_F"])) * 100, 1),
-            "F": round(float(probs["T_F"]) * 100, 1),
-            "J": round((1 - float(probs["J_P"])) * 100, 1),
-            "P": round(float(probs["J_P"]) * 100, 1)
+            "E": round(float(probs["E_I"]) * 100, 1),
+            "I": round((1 - float(probs["E_I"])) * 100, 1),
+            "S": round(float(probs["S_N"]) * 100, 1),
+            "N": round((1 - float(probs["S_N"])) * 100, 1),
+            "T": round(float(probs["T_F"]) * 100, 1),
+            "F": round((1 - float(probs["T_F"])) * 100, 1),
+            "J": round(float(probs["J_P"]) * 100, 1),
+            "P": round((1 - float(probs["J_P"])) * 100, 1)
         }
 
         return {
@@ -712,7 +712,7 @@ def main():
               "J_P": ("Judging", "Perceiving")}
     for dim, prob in probs.items():
         l = labels[dim]
-        lp, rp = (1 - prob) * 100, prob * 100
+        lp, rp = prob * 100, (1 - prob) * 100
         print(f"  {l[0]:>15s} {lp:5.1f}% {'<' if lp > rp else ' '} | {'>' if rp > lp else ' '} {rp:5.1f}% {l[1]}")
 
     print("\n" + "=" * 60 + "\n")
