@@ -38,6 +38,8 @@ if sys.platform == "win32":
 
 # Them path de import cac module cua project
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / "1_crawl" / "logic"))
 
 from youtube_process import fetch_youtube_playlist
@@ -453,12 +455,20 @@ class MBTIPredictor:
         return df.mean().values.reshape(1, -1)
 
     def compute_top3_mbti(self, probs):
-        """Tính xác suất 16 loại MBTI, trả top 3."""
+        """Tính xác suất 16 loại MBTI, trả top 3.
+        
+        Label encoding trong dataset (từ mbti_final_metadata_nlp.csv):
+          E_I=1 → E,  E_I=0 → I
+          S_N=1 → S,  S_N=0 → N  (chú ý: 1=S không phải N)
+          T_F=1 → T,  T_F=0 → F  (chú ý: 1=T không phải F)
+          J_P=1 → J,  J_P=0 → P
+        Tuple format: (label_khi_prob=0, label_khi_prob=1, xác_suất_class_1)
+        """
         dims = [
-            ("I", "E", probs["E_I"]),
-            ("N", "S", probs["S_N"]),
-            ("F", "T", probs["T_F"]),
-            ("P", "J", probs["J_P"]),
+            ("I", "E", probs["E_I"]),   # prob → E
+            ("N", "S", probs["S_N"]),   # prob → S
+            ("F", "T", probs["T_F"]),   # prob → T
+            ("P", "J", probs["J_P"]),   # prob → J
         ]
         scores = {}
         for combo in product(*[(d[0], d[1]) for d in dims]):
@@ -660,14 +670,15 @@ class MBTIPredictor:
                 "label": MBTI_DESC.get(mbti_type, "") 
             })
 
-        # 2. Format Traits (Thêm float() để ép kiểu)
+        # 2. Format Traits — theo label encoding thực tế:
+        #    E_I=1→E, S_N=1→S, T_F=1→T, J_P=1→J
         traits = {
             "E": round(float(probs["E_I"]) * 100, 1),
             "I": round((1 - float(probs["E_I"])) * 100, 1),
-            "S": round(float(probs["S_N"]) * 100, 1),
-            "N": round((1 - float(probs["S_N"])) * 100, 1),
-            "T": round(float(probs["T_F"]) * 100, 1),
-            "F": round((1 - float(probs["T_F"])) * 100, 1),
+            "S": round(float(probs["S_N"]) * 100, 1),          # S_N=1 → S
+            "N": round((1 - float(probs["S_N"])) * 100, 1),    # S_N=0 → N
+            "T": round(float(probs["T_F"]) * 100, 1),          # T_F=1 → T
+            "F": round((1 - float(probs["T_F"])) * 100, 1),    # T_F=0 → F
             "J": round(float(probs["J_P"]) * 100, 1),
             "P": round((1 - float(probs["J_P"])) * 100, 1)
         }
