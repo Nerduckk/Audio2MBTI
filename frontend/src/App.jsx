@@ -1,6 +1,5 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect } from 'react'
 import axios from 'axios'
-import Papa from 'papaparse' // Import thư viện đọc CSV
 
 // TỪ ĐIỂN GỢI Ý NHẠC THEO 16 NHÓM MBTI
 const mbtiMusicDB = {
@@ -20,6 +19,26 @@ const mbtiMusicDB = {
   "ISFP": [{ title: "Golden Hour", artist: "JVKE", vibe: "Nghệ thuật, Nhạy cảm" }, { title: "ocean eyes", artist: "Billie Eilish", vibe: "Mê đắm, Thẩm mỹ" }, { title: "Bước Qua Nhau", artist: "Vũ.", vibe: "Chậm rãi, Thơ mộng" }],
   "ESTP": [{ title: "Uptown Funk", artist: "Bruno Mars", vibe: "Tâm điểm, Hiện tại" }, { title: "Blinding Lights", artist: "The Weeknd", vibe: "Tốc độ, Hành động" }, { title: "Nước Hoa", artist: "B Ray", vibe: "Sành điệu, Chơi bời" }],
   "ESFP": [{ title: "Levitating", artist: "Dua Lipa", vibe: "Lấp lánh, Tận hưởng" }, { title: "24K Magic", artist: "Bruno Mars", vibe: "Tiệc tùng" }, { title: "Bo Xì Bo", artist: "Hoàng Thùy Linh", vibe: "Bắt tai, Nhảy múa" }]
+};
+
+// TỪ ĐIỂN NHÂN VẬT ĐIỆN ẢNH (Hiển thị Tên nhân vật + Phim)
+const characterDB = {
+  "INTJ": { name: "Thomas Shelby", movie: "Peaky Blinders (2013)" },
+  "INTP": { name: "Sherlock Holmes", movie: "Sherlock (2010)" },
+  "ENTJ": { name: "Harvey Specter", movie: "Suits (2011)" },
+  "ENTP": { name: "Tony Stark", movie: "Iron Man (2008)" },
+  "INFJ": { name: "Albus Dumbledore", movie: "Harry Potter (2001)" },
+  "INFP": { name: "Frodo Baggins", movie: "Lord of the Rings (2001)" },
+  "ENFJ": { name: "Steve Rogers", movie: "Captain America (2011)" },
+  "ENFP": { name: "Peter Parker", movie: "Spider-Man (2017)" },
+  "ISTJ": { name: "John Wick", movie: "John Wick (2014)" },
+  "ISFJ": { name: "Samwise Gamgee", movie: "Lord of the Rings (2001)" },
+  "ESTJ": { name: "Minerva McGonagall", movie: "Harry Potter (2001)" },
+  "ESFJ": { name: "Woody", movie: "Toy Story (1995)" },
+  "ISTP": { name: "James Bond", movie: "Casino Royale (2006)" },
+  "ISFP": { name: "Harry Potter", movie: "Harry Potter (2001)" },
+  "ESTP": { name: "Tyler Durden", movie: "Fight Club (1999)" },
+  "ESFP": { name: "Peter Quill", movie: "Guardians of the Galaxy (2014)" }
 };
 
 const FloatingParticles = () => {
@@ -63,21 +82,6 @@ function App() {
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState(null)
   const [error, setError] = useState('')
-  
-  // STATE CHỨA DỮ LIỆU CSV
-  const [mbtiDatabase, setMbtiDatabase] = useState([]);
-
-  // Load file mbti.csv ngay khi vừa vào web
-  useEffect(() => {
-    Papa.parse('/mbti.csv', {
-      download: true,
-      header: true, // Lấy dòng đầu tiên làm key (mbti, role, movie, img_url)
-      skipEmptyLines: true,
-      complete: (results) => {
-        setMbtiDatabase(results.data);
-      }
-    });
-  }, []);
 
   const handlePredict = async () => {
     if (!url) {
@@ -92,7 +96,7 @@ function App() {
       const response = await axios.post('http://localhost:3000/api/predict', { url })
       setResult(response.data.data)
     } catch (err) {
-      setError('Có lỗi xảy ra. Hãy đảm bảo Backend (python main.py) đang chạy!')
+      setError('Có lỗi xảy ra. Hãy đảm bảo Backend đang chạy!')
     } finally {
       setLoading(false)
     }
@@ -100,20 +104,6 @@ function App() {
 
   const top1MBTI = result ? result.top3[0].mbti : null;
   const recommendedSongs = top1MBTI ? mbtiMusicDB[top1MBTI] || mbtiMusicDB["INFP"] : [];
-
-  // Logic: Bốc ngẫu nhiên 1 nhân vật trong CSV có cùng MBTI với Top 1
-  const characterMatch = useMemo(() => {
-    if (!top1MBTI || mbtiDatabase.length === 0) return null;
-    
-    // Lọc ra các nhân vật cùng MBTI và có link ảnh hợp lệ
-    const matches = mbtiDatabase.filter(
-      row => row.mbti === top1MBTI && row.role && row.img_url && row.img_url.length > 10
-    );
-    
-    if (matches.length === 0) return null;
-    // Lấy random 1 nhân vật trong danh sách
-    return matches[Math.floor(Math.random() * matches.length)];
-  }, [top1MBTI, mbtiDatabase, result]); // Render lại nhân vật mỗi khi có result mới
 
   return (
     <div className="min-h-screen p-6 md:p-12 flex flex-col items-center relative">
@@ -160,34 +150,38 @@ function App() {
         </div>
       )}
 
-      {/* RESULT AREA: ĐÃ NÂNG CẤP LÊN GRID 3 CỘT (max-w-7xl) */}
+      {/* RESULT AREA: GRID 3 CỘT VÀ GỢI Ý NHẠC */}
       {!loading && result && (
-        <div className="w-full max-w-7xl grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 animate-[fadeIn_0.5s_ease-out]">
+        <div className="w-full max-w-7xl grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 items-stretch animate-[fadeIn_0.5s_ease-out]">
           
           {/* CỘT 1: KẾT QUẢ TOP 3 */}
-          <div className="flex flex-col gap-6">
-            <h2 className="text-3xl font-bold tracking-tight border-b-4 border-mistral-black pb-2 mb-2">
+          <div className="flex flex-col h-full">
+            <h2 className="text-3xl font-bold tracking-tight border-b-4 border-mistral-black pb-2 mb-6">
               KẾT QUẢ TOP 3
             </h2>
-            {result.top3.map((item, index) => (
-              <div key={index} className="bg-mistral-surface shadow-golden p-6 border border-[#e5d8ae] rounded-none flex flex-col gap-2 relative overflow-hidden transition-transform hover:-translate-y-1 hover:shadow-xl">
-                <div className="absolute left-0 top-0 bottom-0 w-2 bg-gradient-to-b from-mistral-yellow via-mistral-amber to-mistral-orange"></div>
-                <div className="flex justify-between items-end">
-                  <h3 className="text-5xl font-bold tracking-tighter text-mistral-black">{item.mbti}</h3>
-                  <span className="text-2xl font-bold text-mistral-orange">{item.percent}%</span>
+            <div className="flex flex-col gap-4 flex-1">
+              {result.top3.map((item, index) => (
+                <div key={index} className="flex-1 bg-mistral-surface shadow-golden p-6 border border-[#e5d8ae] rounded-none flex flex-col justify-center relative overflow-hidden transition-transform hover:-translate-y-1 hover:shadow-xl">
+                  <div className="absolute left-0 top-0 bottom-0 w-2 bg-gradient-to-b from-mistral-yellow via-mistral-amber to-mistral-orange"></div>
+                  <div className="flex justify-between items-end">
+                    <h3 className="text-5xl font-bold tracking-tighter text-mistral-black">{item.mbti}</h3>
+                    <span className="text-2xl font-bold text-mistral-orange">{item.percent}%</span>
+                  </div>
+                  <p className="text-lg font-bold text-gray-700 mt-2 border-t border-[#e5d8ae] pt-2">{item.label}</p>
                 </div>
-                <p className="text-lg font-bold text-gray-700 mt-2 border-t border-[#e5d8ae] pt-2">{item.label}</p>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
 
           {/* CỘT 2: CHỈ SỐ TÂM LÝ */}
-          <div className="flex flex-col">
+          <div className="flex flex-col h-full">
             <h2 className="text-3xl font-bold tracking-tight border-b-4 border-mistral-black pb-2 mb-6 uppercase">
               Chỉ số tâm lý
             </h2>
-            {/* Thêm hover:bg-mistral-surface và transition-colors vào container chính */}
-            <div className="bg-white hover:bg-mistral-surface transition-colors duration-300 border-2 border-mistral-black p-8 rounded-none shadow-[8px_8px_0px_0px_rgba(31,31,31,1)] flex flex-col gap-10 flex-1 relative z-10 group/traits">
+            
+            {/* Đổi p-8 thành py-8 px-6 và gap-0, sau đó dùng justify-between */}
+            <div className="flex-1 bg-white hover:bg-mistral-surface transition-colors duration-300 border-2 border-mistral-black py-8 px-6 rounded-none shadow-[8px_8px_0px_0px_rgba(31,31,31,1)] flex flex-col justify-between relative z-10">
+              {/* Các TraitBar giờ đây không cần gap ở thẻ cha nữa, justify-between tự xử lý */}
               <TraitBar leftLabel="Extrovert (E)" rightLabel="Introvert (I)" leftValue={result.traits.E} rightValue={result.traits.I} />
               <TraitBar leftLabel="Sensing (S)" rightLabel="Intuitive (N)" leftValue={result.traits.S} rightValue={result.traits.N} />
               <TraitBar leftLabel="Thinking (T)" rightLabel="Feeling (F)" leftValue={result.traits.T} rightValue={result.traits.F} />
@@ -195,62 +189,46 @@ function App() {
             </div>
           </div>
 
-          {/* CỘT 3 (MỚI): NHÂN VẬT ĐỒNG ĐIỆU */}
-          <div className="flex flex-col">
+          {/* CỘT 3: BẢN NGÃ ĐIỆN ẢNH */}
+          <div className="flex flex-col h-full">
              <h2 className="text-3xl font-bold tracking-tight border-b-4 border-mistral-black pb-2 mb-6">
               BẢN NGÃ ĐIỆN ẢNH
              </h2>
-             {characterMatch ? (
-               // Card Nhân Vật Phong Cách Mistral Cực Chiến
-               // Card Nhân Vật Phong Cách Sáng (Mistral Light)
-               <div className="bg-white border-2 border-mistral-black rounded-none shadow-[8px_8px_0px_0px_rgba(250,82,15,1)] flex flex-col relative overflow-hidden flex-1 group">
-                  {/* Ảnh nhân vật - Nền sáng */}
-                  <div className="h-64 md:h-72 w-full relative overflow-hidden bg-mistral-surface">
-                     <img 
-                       src={characterMatch.img_url} 
-                       alt={characterMatch.role} 
-                       className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
-                       onError={(e) => { e.target.src = 'https://via.placeholder.com/400x500/fff0c2/fa520f?text=NO+IMAGE' }}
-                     />
-                     <div className="absolute inset-0 bg-gradient-to-t from-white via-white/40 to-transparent"></div>
-                  </div>
-                  
-                  {/* Thông tin */}
-                  <div className="p-6 flex flex-col justify-end z-10 -mt-12 relative pointer-events-none">
-                     <span className="bg-mistral-black text-white font-bold px-3 py-1 self-start mb-3 text-sm tracking-widest uppercase border-2 border-mistral-orange shadow-[2px_2px_0px_0px_rgba(250,82,15,1)]">
-                        Hệ tư tưởng {top1MBTI}
-                     </span>
-                     <h3 className="text-4xl font-bold text-mistral-black tracking-tighter leading-tight mb-2">
-                        {characterMatch.role}
-                     </h3>
-                     <p className="text-mistral-orange font-bold text-lg tracking-tight uppercase">
-                        ▶ Phim: {characterMatch.movie}
-                     </p>
-                  </div>
-               </div>
-             ) : (
-               // Nếu chưa load xong file CSV hoặc không tìm thấy
-               <div className="bg-[#111] border-2 border-mistral-black rounded-none shadow-[8px_8px_0px_0px_rgba(31,31,31,1)] flex flex-col items-center justify-center flex-1 p-8 text-center">
-                 <div className="w-12 h-12 border-4 border-mistral-orange border-t-transparent rounded-full animate-spin mb-4"></div>
-                 <p className="text-mistral-amber font-mono font-bold">Đang quét kho lưu trữ nhân vật...</p>
-               </div>
-             )}
+             <div className="flex-1 bg-white border-2 border-mistral-black rounded-none shadow-[8px_8px_0px_0px_rgba(250,82,15,1)] flex flex-col relative overflow-hidden group cursor-pointer">
+                <div className="flex-1 w-full relative overflow-hidden bg-mistral-surface border-b-[6px] border-mistral-orange min-h-[200px]">
+                   <img 
+                    src={`/images/characters/${top1MBTI.toUpperCase()}.jpg`} 
+                    alt={characterDB[top1MBTI]?.name || 'Nhân vật'}
+                    onError={(e) => {
+                      e.target.onerror = null; 
+                      e.target.src = '/images/default.jpg'; 
+                    }}
+                    className="absolute inset-0 w-full h-full object-cover object-top transition-transform duration-500 group-hover:scale-110"
+                    />
+                </div>
+                <div className="p-6 flex flex-col bg-white z-10 relative">
+                   <span className="bg-mistral-black text-white font-bold px-3 py-1 self-start mb-3 text-sm tracking-widest uppercase border-2 border-mistral-orange shadow-[2px_2px_0px_0px_rgba(250,82,15,1)]">
+                      Hệ tư tưởng {top1MBTI}
+                   </span>
+                   <h3 className="text-3xl font-bold text-mistral-black tracking-tighter leading-tight mb-1">
+                      {characterDB[top1MBTI]?.name || 'Unknown Character'}
+                   </h3>
+                   <p className="text-mistral-orange font-bold text-lg tracking-tight uppercase">
+                      Phim: {characterDB[top1MBTI]?.movie || 'Unknown Movie'}
+                   </p>
+                </div>
+             </div>
           </div>
 
-          {/* <div className="col-span-1 md:col-span-2 lg:col-span-3 border-t-4 border-mistral-black mt-8 pt-12"></div> */}
-          <br/>
-          <br/>
-
-          {/* KHỐI GỢI Ý NHẠC (Full 3 cột) */}
-          <div className="col-span-1 md:col-span-2 lg:col-span-3 flex flex-col gap-6">
-             <div className="flex items-end justify-between border-b-4 border-mistral-black pb-2 mb-4">
+          {/* KHỐI GỢI Ý NHẠC */}
+          <div className="col-span-1 md:col-span-2 lg:col-span-3 flex flex-col gap-6 mt-4">
+             <div className="flex items-end justify-between border-b-4 border-mistral-black pb-2 mb-2">
                 <h2 className="text-3xl font-bold tracking-tight uppercase">
                   Playlist dành cho <span className="text-mistral-orange">{top1MBTI}</span>
                 </h2>
              </div>
              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {recommendedSongs.map((song, idx) => {
-                  // Tự động tạo link tìm kiếm trên YouTube
                   const youtubeSearchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(song.title + ' ' + song.artist)}`;
                   
                   return (
@@ -266,8 +244,6 @@ function App() {
                            {song.artist}
                          </p>
                        </div>
-                       
-                       {/* Nút bấm nhảy sang tab YouTube */}
                        <div className="flex justify-start">
                          <a 
                            href={youtubeSearchUrl}
@@ -295,7 +271,7 @@ function TerminalLoader() {
   const [currentText, setCurrentText] = useState("");
 
   const allLines = [
-    "> Khởi tạo động cơ AI Mistral...",
+    "> Khởi tạo AI Audio2MBTI...",
     "> Đang cào metadata từ Playlist... [OK]",
     "> Đang trích xuất đặc trưng Log-Mel Spectrogram...",
     "> Tải 4 mô hình XGBoost lên RAM... [OK]",
@@ -309,7 +285,6 @@ function TerminalLoader() {
     let lineIdx = 0, charIdx = 0, typingTimer;
     
     const typeWriter = () => {
-      // Dừng lại nếu đã gõ hết mảng
       if (lineIdx >= allLines.length) return;
       
       const fullLine = allLines[lineIdx];
@@ -340,20 +315,15 @@ function TerminalLoader() {
       </div>
       
       <div className="font-mono text-lg text-mistral-amber flex flex-col gap-2 min-h-[200px]">
-        
-        {/* CÁC DÒNG ĐÃ GÕ XONG: Thêm animate-pulse vào đây để nó nhấp nháy mãi mãi */}
         {completedLines.map((line, i) => (
           <div key={i} className="animate-pulse">{line}</div>
         ))}
-        
-        {/* DÒNG ĐANG GÕ VÀ CON TRỎ CHUỘT (Chỉ hiện khi chưa gõ xong hết) */}
         {completedLines.length < allLines.length && (
           <div className="flex items-center">
             <span>{currentText}</span>
             <div className="w-2.5 h-5 bg-mistral-orange animate-pulse ml-1"></div>
           </div>
         )}
-        
       </div>
     </div>
   );
@@ -367,12 +337,10 @@ function TraitBar({ leftLabel, rightLabel, leftValue, rightValue }) {
         <span>{rightLabel} ({rightValue}%)</span>
       </div>
       <div className="h-4 w-full bg-gray-200 border border-transparent group-hover:border-mistral-black/10 rounded-none flex overflow-hidden transition-all">
-        {/* Thanh màu cam - Thêm hiệu ứng làm sáng khi hover */}
         <div 
           className="h-full bg-gradient-to-r from-mistral-yellow to-mistral-orange transition-all duration-1000 ease-out group-hover:saturate-150" 
           style={{ width: `${leftValue}%` }}
         ></div>
-        {/* Thanh màu đen */}
         <div 
           className="h-full bg-mistral-black transition-all duration-1000 ease-out" 
           style={{ width: `${rightValue}%` }}
