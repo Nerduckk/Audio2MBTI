@@ -359,12 +359,14 @@ class MBTIPredictor:
                 }
 
         matched_features = self.match_tracks_from_cache(playlist_data.get("tracks", []))
-        if len(matched_features) >= 2:
+        total_tracks = len(playlist_data.get("tracks", []))
+        required_matches = min(12, max(5, int(total_tracks * 0.6)))
+        if len(matched_features) >= min(required_matches, total_tracks):
             vector = self.build_feature_vector(matched_features)
             return vector, {
                 "mode": "track_cache",
                 "matched_tracks": len(matched_features),
-                "requested_tracks": len(playlist_data.get("tracks", [])),
+                "requested_tracks": total_tracks,
             }
         return None, None
 

@@ -133,7 +133,7 @@ def analyze_lyrics_sentiment(track_name: str, artist_name: str) -> Dict[str, flo
 
         clean_lyrics = re.sub(r"\[\d{2}:\d{2}\.\d{2}\]", "", raw_lyrics).strip()[:2000]
         translated = GoogleTranslator(source="auto", target="en").translate(clean_lyrics[:1500])
-        raw_results = get_emotion_pipeline()(translated[:1500], top_k=10)
+        raw_results = get_emotion_pipeline()(translated[:1500], top_k=10, truncation=True, max_length=512)
         ai_results = raw_results[0] if isinstance(raw_results[0], list) else raw_results
 
         polarity_score = 0.0
