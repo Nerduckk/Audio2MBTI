@@ -1,0 +1,25 @@
+# Core API
+fastapi>=0.115
+uvicorn[standard]>=0.30
+pydantic>=2.7
+
+# Data / ML
+numpy>=1.26
+pandas>=2.2
+scikit-learn>=1.4
+xgboost>=2.0
+joblib>=1.4
+torch>=2.3
+librosa>=0.10
+soundfile>=0.12
+transformers>=4.40
+
+# Data collection
+yt-dlp>=2024.8.6
+spotify-scraper>=1.0
+syncedlyrics>=1.0
+beautifulsoup4>=4.12
+requests>=2.31
+deep-translator>=1.11
+python-dotenv>=1.0
+PyYAML>=6.0

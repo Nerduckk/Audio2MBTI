@@ -1,4 +1,4 @@
-# OS & Editors
+﻿# OS & Editors
 .DS_Store
 .vscode/
 .idea/
@@ -115,3 +115,16 @@ error.log
 !3_train/models/hybrid_playlist_*.json
 !3_train/models/hybrid_playlist_meta.json
 !3_train/models/audio_cnn.pt
+
+# Secrets & session credentials
+*cookies*.txt
+youtube_cookies.txt
+*secret*
+*.pem
+*.key
+
+# Project manifests (must be committed)
+!package.json
+!package-lock.json
+!frontend/package.json
+!frontend/package-lock.json
